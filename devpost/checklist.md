@@ -9,7 +9,7 @@ Build mode: fast
 
 ## Slices
 
-- [ ] **1. You can twist a mirror and free the beam on level 1**
+- [x] **1. You can twist a mirror and free the beam on level 1**
   Becomes usable: A running page with the stone seed, core, gate and one mirror. Drag or tap twists it with snapping, the beam re-routes live, and solving is detected.
   Why now: This is the kernel (twist → beam re-routes). It proves the scene, input and tracer end to end, including scaffolding.
   PRD ref: `prd.md > The Core Journey` (steps 1–3), `prd.md > Twisting pieces`, `prd.md > The beam`
@@ -19,7 +19,7 @@ Build mode: fast
   Learner check: Run `npm run dev`, drag the mirror around, and say whether twisting feels good.
   Commit: `Add twistable mirror and live beam on level 1`
 
-- [ ] **2. Solving opens the seed and carries you through 3 levels**
+- [x] **2. Solving opens the seed and carries you through 3 levels**
   Becomes usable: Levels 2 and 3 (including linked pieces), solve and assemble animations, progress saved, end card with play again.
   Why now: Completes the core loop. Linked pieces are the last mechanic.
   PRD ref: `prd.md > The Core Journey` (steps 4–6), `prd.md > Solving and progress`, `prd.md > States and Boundaries`
@@ -62,3 +62,4 @@ Activity mode:
 
 ## Revisions
 
+- Solve and assemble animations, progress saving and the end card were built alongside slice 1 instead of in slice 2 — they shared the board and loop code, so slice 2 became level content plus verification.
