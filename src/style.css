@@ -1,0 +1,141 @@
+:root {
+  --ink: rgba(70, 58, 50, 0.62);
+  --ink-strong: rgba(70, 58, 50, 0.85);
+  --accent: #e39a6f;
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Helvetica Neue', sans-serif;
+  font-weight: 300;
+  color: var(--ink);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #f3eee8;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+#ui {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.wordmark {
+  position: absolute;
+  top: max(20px, env(safe-area-inset-top));
+  left: 24px;
+  font-size: 15px;
+  letter-spacing: 0.32em;
+}
+
+.dots {
+  position: absolute;
+  bottom: max(28px, env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 12px;
+}
+
+.dots span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1px solid var(--ink);
+  transition: all 0.6s ease;
+}
+
+.dots span.done {
+  background: var(--ink);
+}
+
+.dots span.current {
+  background: var(--accent);
+  border-color: var(--accent);
+  transform: scale(1.3);
+}
+
+.sound {
+  pointer-events: auto;
+  position: absolute;
+  right: 16px;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.sound svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sound:hover,
+.sound:focus-visible {
+  color: var(--ink-strong);
+}
+
+.end {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  opacity: 0;
+  transition: opacity 1.6s ease;
+}
+
+.end.shown {
+  opacity: 1;
+}
+
+.end p {
+  margin: 0;
+  font-size: 22px;
+  letter-spacing: 0.18em;
+  color: var(--ink-strong);
+}
+
+.again {
+  pointer-events: auto;
+  font: inherit;
+  font-size: 14px;
+  letter-spacing: 0.2em;
+  color: var(--ink-strong);
+  background: rgba(255, 255, 255, 0.35);
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  padding: 10px 22px;
+  cursor: pointer;
+}
+
+.again:hover {
+  background: rgba(255, 255, 255, 0.6);
+}
