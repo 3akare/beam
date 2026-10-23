@@ -1,4 +1,8 @@
 import * as THREE from 'three';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import type { Palette } from '../game/types';
 
 /** Renderer, camera, lights and the pastel background. */
@@ -14,6 +18,8 @@ export class Stage {
   private to = { top: new THREE.Color(), bottom: new THREE.Color() };
   private blend = 1;
   private hemi: THREE.HemisphereLight;
+  private composer: EffectComposer;
+  private bloom: UnrealBloomPass;
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -41,6 +47,13 @@ export class Stage {
     sun.shadow.radius = 4;
     sun.shadow.bias = -0.0005;
     this.scene.add(sun);
+
+    // Only HDR-bright things (the beam, the core) pass the threshold and glow.
+    this.composer = new EffectComposer(this.renderer);
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.75, 0.45, 1.05);
+    this.composer.addPass(this.bloom);
+    this.composer.addPass(new OutputPass());
 
     this.resize();
     window.addEventListener('resize', () => this.resize());
@@ -74,12 +87,18 @@ export class Stage {
     const w = window.innerWidth;
     const h = window.innerHeight;
     this.renderer.setSize(w, h, false);
+    this.composer.setPixelRatio(this.renderer.getPixelRatio());
+    this.composer.setSize(w, h);
+    this.bloom.resolution.set(w / 2, h / 2);
     this.camera.aspect = w / h;
     // Keep the whole seed in view on narrow (portrait) screens.
     const dist = 16.5 * Math.max(1, 0.95 / this.camera.aspect);
     const tilt = THREE.MathUtils.degToRad(52);
     this.camera.position.set(0, Math.sin(tilt) * dist, Math.cos(tilt) * dist);
     this.camera.lookAt(0, -0.2, 0);
+    const fog = this.scene.fog as THREE.Fog;
+    fog.near = dist + 2;
+    fog.far = dist + 20;
     this.camera.updateProjectionMatrix();
   }
 
@@ -91,6 +110,6 @@ export class Stage {
   }
 
   render() {
-    this.renderer.render(this.scene, this.camera);
+    this.composer.render();
   }
 }

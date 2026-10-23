@@ -103,7 +103,7 @@ export class Board {
     pedestal.position.y = TILE_TOP + 0.1;
     pedestal.castShadow = true;
     const coreMat = this.own(
-      new THREE.MeshStandardMaterial({ color: 0xfff4e0, emissive: 0xffc98a, emissiveIntensity: 1.6, roughness: 0.3 }),
+      new THREE.MeshStandardMaterial({ color: 0xfff4e0, emissive: 0xffc98a, emissiveIntensity: 0.9, roughness: 0.3 }),
     );
     this.core = new THREE.Mesh(this.own(new THREE.OctahedronGeometry(0.24)), coreMat);
     this.core.position.y = BEAM_Y;

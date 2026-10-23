@@ -1,4 +1,5 @@
 import './style.css';
+import { Sound } from './audio';
 import { initialOrientations, trace, turnSet } from './game/beam';
 import { LEVELS } from './game/levels';
 import type { Level, Orientations } from './game/types';
@@ -22,6 +23,17 @@ const DAMPING = 2 * Math.sqrt(SPRING) * 0.72; // a touch under-damped: a soft se
 
 const stage = new Stage(document.querySelector<HTMLCanvasElement>('#stage')!);
 const ui = new UI(document.querySelector<HTMLElement>('#ui')!, LEVELS.length);
+const sound = new Sound();
+ui.setMuted(sound.muted);
+const toggleSound = () => {
+  sound.start();
+  ui.setMuted(sound.toggleMuted());
+};
+ui.onSoundToggle(toggleSound);
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'm' || e.key === 'M') toggleSound();
+});
+window.addEventListener('pointerdown', () => sound.start());
 
 let levelIndex = 0;
 let level: Level;
@@ -30,7 +42,7 @@ let phase: Phase = 'assembling';
 let orientations: Orientations = {};
 let spins: Record<string, Spin> = {};
 let grabbed: { ids: string[]; base: Record<string, number> } | null = null;
-let movingKey = '';
+let moving = new Set<string>();
 let touched = false;
 
 function loadProgress(): number {
@@ -59,8 +71,9 @@ function loadLevel(index: number, instant = false) {
   orientations = initialOrientations(level);
   spins = Object.fromEntries(level.pieces.map((p) => [p.id, { value: p.o, target: p.o, vel: 0 }]));
   grabbed = null;
-  movingKey = '';
+  moving = new Set();
   phase = 'assembling';
+  sound.setLevel(index);
 
   board = new Board(level, index === 0 && !touched);
   stage.scene.add(board.group);
@@ -95,6 +108,7 @@ async function solve() {
   const solvedBoard = board!;
   const next = levelIndex + 1;
   saveProgress(next < LEVELS.length ? next : 0);
+  sound.solve();
   await solvedBoard.playSolve();
   if (solvedBoard !== board) return;
   if (next < LEVELS.length) {
@@ -158,9 +172,14 @@ function frame(now: number) {
   }
 
   // Re-trace only when the set of moving pieces changes (grab, snap, settle).
-  const key = [...movingPieces()].sort().join();
-  if (key !== movingKey) {
-    movingKey = key;
+  const nowMoving = movingPieces();
+  const settled = [...moving].filter((id) => !nowMoving.has(id));
+  if (settled.length || nowMoving.size !== moving.size) {
+    if (settled.length && phase === 'playing') {
+      const id = settled[0];
+      sound.note(level.pieces.findIndex((p) => p.id === id) * 2 + orientations[id]);
+    }
+    moving = nowMoving;
     refreshBeam();
   }
 
@@ -182,7 +201,7 @@ if (import.meta.env.DEV) {
         turn(turnSet(level, id), 1);
         return true;
       },
-      state: () => ({ levelIndex, phase, orientations: { ...orientations } }),
+      state: () => ({ levelIndex, phase, orientations: { ...orientations }, audio: sound.running, muted: sound.muted }),
       load: (i: number) => loadLevel(i),
     },
   });

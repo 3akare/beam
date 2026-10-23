@@ -29,7 +29,7 @@ Build mode: fast
   Learner check: Play from level 1 to the end card and say whether the solve moment lands.
   Commit: `Add solve transition, linked pieces and three levels`
 
-- [ ] **3. It sounds and glows**
+- [x] **3. It sounds and glows**
   Becomes usable: Bloom on the beam, ambient pad, snap notes, solve arpeggio, mute toggle.
   Why now: Polish layered on a working loop, so it can't block the kernel.
   PRD ref: `prd.md > Sound`, `prd.md > Look and Feel`
