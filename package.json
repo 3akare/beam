@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "verify": "tsc --noEmit && tsx scripts/verify-levels.ts"
+    "verify": "tsc --noEmit && tsx scripts/verify-levels.ts",
+    "generate": "tsx scripts/generate.ts"
   },
   "dependencies": {
     "three": "^0.186.1"

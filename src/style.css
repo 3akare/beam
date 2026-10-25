@@ -272,3 +272,14 @@ body.over-tray .tray {
 .slot[hidden] {
   display: none;
 }
+
+.title .gen {
+  margin-left: 0.8em;
+  color: var(--ink);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+.actions button[hidden] {
+  display: none;
+}

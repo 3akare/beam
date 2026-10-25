@@ -1,5 +1,6 @@
 // Checks every level: the empty board is unsolved, the stored solution solves it,
 // its pieces are legally placed and within the inventory, and how much slack it has.
+import { generateLevel, validateLevel } from '../src/game/generator';
 import { canPlace, solved } from '../src/game/optics';
 import { LEVELS } from '../src/game/levels';
 import type { Level, Placement } from '../src/game/types';
@@ -36,5 +37,19 @@ LEVELS.forEach((level, i) => {
   for (const e of errors) console.error(`level ${i + 1}: ${e}`);
   failed ||= errors.length > 0;
 });
+console.log(`all ${LEVELS.length} handcrafted levels verified`);
+
+// The generator: one level per complexity step must come out valid, and the same seed
+// must always give the same level.
+for (let c = 1; c <= 10; c++) {
+  const seed = `verify-${c}`;
+  const a = generateLevel({ seed, complexity: c });
+  const b = generateLevel({ seed, complexity: c });
+  const v = validateLevel(a.level, { minSlack: a.recipe.minSlack });
+  const same = JSON.stringify(a.level) === JSON.stringify(b.level);
+  const status = v.ok && same ? 'ok' : `FAIL ${v.problems.join('; ')}${same ? '' : ' (not deterministic)'}`;
+  console.log(`generated c${c} ${a.recipe.archetype.padEnd(6)} "${a.level.name}": ${status}`);
+  failed ||= !(v.ok && same);
+}
 if (failed) process.exit(1);
-console.log(`all ${LEVELS.length} levels verified`);
+console.log('all checks passed');

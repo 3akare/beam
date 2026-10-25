@@ -45,6 +45,7 @@ export class Board {
   private emitter = new THREE.Group();
   private targets: TargetView[] = [];
   private pieces = new Map<string, PieceView>();
+  private fixed: THREE.Group[] = [];
   private beamLayer = new THREE.Group();
   private beamPool: THREE.Mesh[] = [];
   private beamGeo: THREE.PlaneGeometry;
@@ -196,6 +197,27 @@ export class Board {
     this.invalidMat = this.own(
       new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 0.15, 0.15), transparent: true, opacity: 0.35, depthWrite: false }),
     );
+
+    // Bolted pieces: a graphite mounting plate with brass rivets says "this one doesn't move".
+    const plateGeo = this.own(new THREE.CylinderGeometry(0.56, 0.6, 0.05, 48));
+    const rivetGeo = this.own(new THREE.SphereGeometry(0.045, 12, 8));
+    for (const p of level.fixed ?? []) {
+      const view = this.makePiece(p.kind);
+      const plate = new THREE.Mesh(plateGeo, graphite);
+      plate.position.y = 0.025;
+      plate.receiveShadow = true;
+      view.group.add(plate);
+      for (let k = 0; k < 4; k++) {
+        const rivet = new THREE.Mesh(rivetGeo, brass);
+        const a = (k / 4) * Math.PI * 2 + Math.PI / 4;
+        rivet.position.set(Math.cos(a) * 0.48, 0.05, Math.sin(a) * 0.48);
+        view.group.add(rivet);
+      }
+      view.group.position.copy(this.toWorld(p));
+      view.group.rotation.y = -p.angle;
+      this.group.add(view.group);
+      this.fixed.push(view.group);
+    }
 
     // Beams: soft additive ribbons, pooled and re-laid on every trace.
     this.beamGeo = this.own(new THREE.PlaneGeometry(1, 1));
@@ -362,7 +384,7 @@ export class Board {
   }
 
   playAssemble(): Promise<void> {
-    const items = [...this.walls.map((w) => w.mesh), this.emitter, ...this.targets.map((t) => t.group)];
+    const items = [...this.walls.map((w) => w.mesh), this.emitter, ...this.targets.map((t) => t.group), ...this.fixed];
     const origin = this.toWorld(this.level.emitter);
     return Promise.all(
       items.map((obj) => {

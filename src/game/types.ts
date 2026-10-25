@@ -37,8 +37,13 @@ export interface Level {
   walls: Rect[];
   targets: Target[];
   inventory: Record<PieceKind, number>;
-  /** One known solution, used by `npm run verify`. */
+  /** Pieces bolted to the board: they bend light but can't be moved or turned. */
+  fixed?: Placement[];
+  /** One known solution (the player's pieces only). Replaying it proves the level is solvable. */
   solution: Placement[];
+  /** Set on generated levels. */
+  seed?: string;
+  complexity?: number;
   /** Neon colour of the walls. */
   tint: string;
 }

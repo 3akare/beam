@@ -1,6 +1,6 @@
 import './style.css';
 import { Sound } from './audio';
-import { LEVELS } from './game/levels';
+import { endlessComplexity, LevelSource } from './game/levelSource';
 import { canPlace, MIRROR_LENGTH, trace } from './game/optics';
 import type { Level, PieceKind, Placed, Vec } from './game/types';
 import { PlayInput, type PlayModel } from './input';
@@ -8,17 +8,36 @@ import { Board } from './render/board';
 import { Stage } from './render/scene';
 import { UI } from './ui';
 
-type Phase = 'assembling' | 'playing' | 'complete' | 'done';
+type Phase = 'loading' | 'assembling' | 'playing' | 'complete';
 
 const STORAGE_KEY = 'beam.level';
+const RUN_KEY = 'beam.run';
 const HOLD_SECONDS = 0.6;
 
 const stage = new Stage(document.querySelector<HTMLCanvasElement>('#stage')!);
 const ui = new UI(document.querySelector<HTMLElement>('#ui')!);
 const sound = new Sound();
 
+const params = new URLSearchParams(location.search);
+/** The endless run's seed: from ?run=, else remembered, else fresh. */
+const runSeed = (() => {
+  const fromUrl = params.get('run');
+  if (fromUrl) return fromUrl;
+  try {
+    const saved = localStorage.getItem(RUN_KEY);
+    if (saved) return saved;
+    const fresh = Math.random().toString(36).slice(2, 8);
+    localStorage.setItem(RUN_KEY, fresh);
+    return fresh;
+  } catch {
+    return 'beam';
+  }
+})();
+const source = new LevelSource(runSeed);
+
 let levelIndex = 0;
 let level: Level;
+let loadToken = 0;
 let board: Board | null = null;
 let phase: Phase = 'assembling';
 let placed: Placed[] = [];
@@ -32,11 +51,11 @@ let lit: boolean[] = [];
 let solvedFor = 0;
 
 function loadProgress(): number {
-  const fromUrl = Number(new URLSearchParams(location.search).get('level'));
-  if (fromUrl >= 1 && fromUrl <= LEVELS.length) return fromUrl - 1;
+  const fromUrl = Number(params.get('level'));
+  if (fromUrl >= 1) return fromUrl - 1;
   try {
     const saved = Number(localStorage.getItem(STORAGE_KEY));
-    return saved >= 0 && saved < LEVELS.length ? saved : 0;
+    return Number.isInteger(saved) && saved >= 0 ? saved : 0;
   } catch {
     return 0;
   }
@@ -58,10 +77,21 @@ function refreshTray() {
   ui.setInventory({ mirror: remaining('mirror'), prism: remaining('prism') }, level.inventory);
 }
 
-function loadLevel(index: number) {
-  board?.dispose();
+/** Load the level at an overall index (handcrafted first, then endless), or a given level. */
+async function loadLevel(index: number, given?: Level) {
+  const token = ++loadToken;
   levelIndex = index;
-  level = LEVELS[index];
+  phase = 'loading';
+  select(null);
+  const next = given ?? (await source.level(index));
+  if (token !== loadToken) return;
+  source.prefetch(index + 1);
+  showLevel(next);
+}
+
+function showLevel(next: Level) {
+  board?.dispose();
+  level = next;
   placed = [];
   origins.clear();
   selected = invalid = null;
@@ -73,13 +103,15 @@ function loadLevel(index: number) {
   stage.scene.add(board.group);
   stage.fit(level.width, level.height);
   stage.setTint(level.tint);
-  sound.setLevel(index);
-  ui.setTitle(index, level.name);
+  sound.setLevel(levelIndex);
+  ui.setTitle(levelIndex, level.name, level.seed ? `${level.seed} · c${level.complexity}` : undefined);
   ui.setAccent(level.tint);
   refreshTray();
   ui.setFade(false);
   board.setBeams([]);
+  const shown = board;
   board.playAssemble().then(() => {
+    if (shown !== board) return;
     phase = 'playing';
     dirty = true;
   });
@@ -104,19 +136,23 @@ async function complete() {
   select(null);
   sound.solve();
   const next = levelIndex + 1;
-  saveProgress(next < LEVELS.length ? next : 0);
+  saveProgress(next);
+  source.prefetch(next);
   const finished = board!;
   await finished.playComplete();
   if (finished !== board) return;
   ui.setFade(true);
   await new Promise((r) => setTimeout(r, 750));
-  if (next < LEVELS.length) {
-    loadLevel(next);
-  } else {
-    phase = 'done';
-    ui.showEnd(() => loadLevel(0));
-    ui.setFade(false);
-  }
+  loadLevel(next);
+}
+
+/** Endless levels can be skipped: move on to the next (harder) one. */
+function skip() {
+  if (phase !== 'playing' && phase !== 'assembling') return;
+  ui.setFade(true);
+  const next = levelIndex + 1;
+  saveProgress(next);
+  setTimeout(() => loadLevel(next), 400);
 }
 
 function restart() {
@@ -206,6 +242,7 @@ ui.onTrayPress((kind, e) => {
   input.startFromTray(kind, e);
 });
 ui.onRestart(restart);
+ui.onSkip(skip);
 ui.setMuted(sound.muted);
 const toggleSound = () => {
   sound.start();
@@ -254,14 +291,24 @@ function frame(now: number) {
   requestAnimationFrame(frame);
 }
 
-loadLevel(loadProgress());
+// ?seed=…&complexity=… plays one specific generated puzzle; otherwise resume the run.
+const customSeed = params.get('seed');
+if (customSeed) {
+  const c = Number(params.get('complexity') ?? 3);
+  const start = Math.max(source.handcrafted, loadProgress());
+  phase = 'loading';
+  levelIndex = start;
+  source.custom(customSeed, Math.max(1, Math.min(10, c))).then((l) => loadLevel(start, l));
+} else {
+  loadLevel(loadProgress());
+}
 requestAnimationFrame(frame);
 
 if (import.meta.env.DEV) {
   // Hooks for scripted checks in the browser.
   Object.assign(window, {
     __beam: {
-      state: () => ({ levelIndex, phase, placed: placed.map((p) => ({ ...p })), lit: [...lit], selected, invalid }),
+      state: () => ({ levelIndex, phase, placed: placed.map((p) => ({ ...p })), lit: [...lit], selected, invalid, seed: level?.seed, complexity: level?.complexity, runSeed }),
       /** Place the level's stored solution. */
       solve: () => {
         if (phase !== 'playing') return false;
@@ -271,6 +318,7 @@ if (import.meta.env.DEV) {
         return true;
       },
       load: (i: number) => loadLevel(i),
+      endlessComplexity,
       screen: (p: Vec) => stage.toScreen(board!.toWorld(p)),
     },
   });

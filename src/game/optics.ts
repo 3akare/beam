@@ -135,7 +135,7 @@ function refract(d: Vec, n: Vec, eta: number): Vec | null {
 }
 
 export function trace(level: Level, placed: Placement[]): TraceResult {
-  const surf = surfaces(level, placed);
+  const surf = surfaces(level, [...(level.fixed ?? []), ...placed]);
   const segments: BeamSegment[] = [];
   const lit = level.targets.map(() => false);
   const queue: Ray[] = [
@@ -223,5 +223,5 @@ export function canPlace(level: Level, others: Placement[], p: Vec): boolean {
   }
   if (level.targets.some((t) => Math.hypot(t.x - p.x, t.y - p.y) < TARGET_RADIUS + FOOTPRINT + 0.05)) return false;
   if (Math.hypot(level.emitter.x - p.x, level.emitter.y - p.y) < EMITTER_RADIUS + FOOTPRINT + 0.1) return false;
-  return others.every((o) => Math.hypot(o.x - p.x, o.y - p.y) >= FOOTPRINT * 2 + 0.1);
+  return [...(level.fixed ?? []), ...others].every((o) => Math.hypot(o.x - p.x, o.y - p.y) >= FOOTPRINT * 2 + 0.1);
 }

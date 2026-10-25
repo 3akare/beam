@@ -59,6 +59,16 @@ Build mode: fast
   Learner check: Play to the end card and say whether the prism moment lands.
   Commit: `Add dispersive prism, colour targets and three levels`
 
+- [x] **6. An engine generates endless, validated puzzles from a seed and a complexity**
+  Becomes usable: After the 3 handcrafted levels, an endless run of generated levels that get harder. `?seed=…&complexity=1..10` plays any specific puzzle. Skip button. `npm run generate` inspects levels from the command line.
+  Why now: The learner asked for a rule-based engine, a validator that proves solvability, and a complexity "salt" for endless, harder levels.
+  PRD ref: `prd.md > The Core Journey`
+  Spec ref: `spec.md > Optics tracer (src/game/optics.ts)`
+  Build: Seeded RNG, a recipe per complexity (archetypes bounce/split/pick/steer, pieces, walls, bolted pieces, decoys, required slack), a solution-first generator, a validator (replays the solution, empty board unsolved, angle slack, no solution with fewer pieces via the solver), a stochastic annealing solver for difficulty and shortcut checks, a worker plus prefetch in the game, and fixed-piece rendering.
+  Verify (mechanical): `npm run verify` validates the handcrafted levels plus one generated level per complexity 1–10, and checks determinism. In the browser, a custom seed loads and solving it advances to the next generated level.
+  Learner check: Play into the endless levels, and try `?seed=anything&complexity=8`.
+  Commit: `Add seeded level generator, validator and solver`
+
 ## Hands-on Checkpoints
 
 - [ ] Early usable behavior explored — combined with final review (learner asked for minimal ceremony)
@@ -86,3 +96,4 @@ Activity mode:
 - v2 rebuild (slices 4–5): the learner chose a 2D view with 3D-looking assets, the Prism Rules vibe, free-angle optics and inventory placement. This replaces the v1 grid mechanic from slices 1–3. Sound, bloom, progress and the build setup carry over.
 - Slices 4 and 5 landed in one commit: the optics engine (mirrors and prism) and all three levels were built and verified together, because level design needed the full tracer.
 - Level 3's mirror has a narrow angle window (about 2°). Arrow keys turn in 0.5° steps and the wheel in 1° steps so it stays playable. Targets were kept at radius 0.32 because larger ones block the neighbouring colours.
+- Generator (slice 6) added at the learner's request (2026-10-25): endless validated levels from seed + complexity. Solvability is proven by replaying each level's built-in solution. The solver only estimates difficulty and hunts shortcuts, because it can't prove unsolvability.
