@@ -8,9 +8,9 @@ export const BANDS: Band[] = ['red', 'green', 'blue'];
 /** Refractive index per band. The spread is exaggerated so the fan is visible on a small board. */
 export const IOR: Record<Band, number> = { red: 1.42, green: 1.52, blue: 1.64 };
 
-const MAX_BOUNCES = 40;
+export const MAX_BOUNCES = 40;
 const MAX_RAYS = 64;
-const EPS = 1e-4;
+export const EPS = 1e-4;
 
 export interface BeamSegment {
   a: Vec;
@@ -25,7 +25,7 @@ export interface TraceResult {
   lit: boolean[];
 }
 
-interface Surface {
+export interface Surface {
   a: Vec;
   b: Vec;
   kind: 'wall' | 'mirror' | 'prism';
@@ -77,7 +77,7 @@ function rectEdges(r: Rect): [Vec, Vec][] {
   ];
 }
 
-function surfaces(level: Level, placed: Placement[]): Surface[] {
+export function surfaces(level: Level, placed: Placement[]): Surface[] {
   const out: Surface[] = [];
   const border: Rect = { x: 0, y: 0, w: level.width, h: level.height };
   for (const r of [border, ...level.walls]) for (const [a, b] of rectEdges(r)) out.push({ a, b, kind: 'wall' });
@@ -100,7 +100,7 @@ function surfaces(level: Level, placed: Placement[]): Surface[] {
 }
 
 /** Distance along the ray to segment a–b, or Infinity. */
-function hitSegment(o: Vec, d: Vec, a: Vec, b: Vec): number {
+export function hitSegment(o: Vec, d: Vec, a: Vec, b: Vec): number {
   const ex = b.x - a.x;
   const ey = b.y - a.y;
   const den = d.x * ey - d.y * ex;
@@ -110,7 +110,7 @@ function hitSegment(o: Vec, d: Vec, a: Vec, b: Vec): number {
   return t > EPS && u >= 0 && u <= 1 ? t : Infinity;
 }
 
-function hitCircle(o: Vec, d: Vec, c: Vec, r: number): number {
+export function hitCircle(o: Vec, d: Vec, c: Vec, r: number): number {
   const fx = o.x - c.x;
   const fy = o.y - c.y;
   const b = fx * d.x + fy * d.y;
@@ -120,13 +120,13 @@ function hitCircle(o: Vec, d: Vec, c: Vec, r: number): number {
   return t > EPS ? t : Infinity;
 }
 
-function reflect(d: Vec, n: Vec): Vec {
+export function reflect(d: Vec, n: Vec): Vec {
   const k = 2 * dot(d, n);
   return { x: d.x - k * n.x, y: d.y - k * n.y };
 }
 
 /** Snell's law; `n` faces the incoming ray. Returns null on total internal reflection. */
-function refract(d: Vec, n: Vec, eta: number): Vec | null {
+export function refract(d: Vec, n: Vec, eta: number): Vec | null {
   const cosi = -dot(n, d);
   const k = 1 - eta * eta * (1 - cosi * cosi);
   if (k < 0) return null;

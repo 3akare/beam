@@ -1,5 +1,6 @@
 import './style.css';
 import { Sound } from './audio';
+import { traceLight } from './game/light';
 import { endlessComplexity, LevelSource } from './game/levelSource';
 import { canPlace, MIRROR_LENGTH, trace } from './game/optics';
 import type { Level, PieceKind, Placed, Vec } from './game/types';
@@ -101,6 +102,7 @@ function showLevel(next: Level) {
 
   board = new Board(level);
   stage.scene.add(board.group);
+  stage.lightScene.add(board.lightGroup);
   stage.fit(level.width, level.height);
   stage.setTint(level.tint);
   sound.setLevel(levelIndex);
@@ -108,7 +110,7 @@ function showLevel(next: Level) {
   ui.setAccent(level.tint);
   refreshTray();
   ui.setFade(false);
-  board.setBeams([]);
+  board.setLight([]);
   const shown = board;
   board.playAssemble().then(() => {
     if (shown !== board) return;
@@ -125,7 +127,7 @@ function select(id: string | null) {
 function retrace() {
   if (!board) return;
   const r = trace(level, placed);
-  board.setBeams(r.segments);
+  board.setLight(traceLight(level, placed));
   board.setLit(r.lit);
   r.lit.forEach((on, i) => on && !lit[i] && phase === 'playing' && sound.chime(level.targets[i].color));
   lit = r.lit;
@@ -319,6 +321,8 @@ if (import.meta.env.DEV) {
       },
       load: (i: number) => loadLevel(i),
       endlessComplexity,
+      board: () => board,
+      stage,
       screen: (p: Vec) => stage.toScreen(board!.toWorld(p)),
     },
   });

@@ -69,6 +69,16 @@ Build mode: fast
   Learner check: Play into the endless levels, and try `?seed=anything&complexity=8`.
   Commit: `Add seeded level generator, validator and solver`
 
+- [x] **7. Light that looks like light, on real materials**
+  Becomes usable: Beams with a hot core, soft halo and gentle haze that light the floor and walls around them (a blurred half-res light buffer). A 24-wavelength spectral fan through the prism (Cauchy dispersion, Zucconi spectrum, normalised to white). A Fresnel ghost reflection off glass. Impact flares on walls and mirrors. AgX tone mapping, bloom over 1.0, vignette, grain and dither. CC0 assets: a neon-studio HDRI, brick, concrete, brushed steel, silver and fingerprint maps.
+  Why now: The learner said the beam "just looks like a straight line that is glowy" and the assets looked poor. The research report ranked these techniques by impact.
+  PRD ref: `prd.md > Look and Feel`
+  Spec ref: `spec.md > Look and Feel`
+  Build: `src/game/light.ts` (visual spectral tracer), `src/render/beams.ts`, `src/render/lighting.ts`, `src/render/assets.ts`, and stage post-processing in `src/render/scene.ts`.
+  Verify (mechanical): Build passes, no console errors, and screenshots of levels 2–3 show the spectral fan, floor light and flares.
+  Learner check: Look at a prism level and say whether the light now feels right.
+  Commit: `Make light physical: spectral dispersion, floor light, real materials`
+
 ## Hands-on Checkpoints
 
 - [ ] Early usable behavior explored — combined with final review (learner asked for minimal ceremony)
@@ -97,3 +107,5 @@ Activity mode:
 - Slices 4 and 5 landed in one commit: the optics engine (mirrors and prism) and all three levels were built and verified together, because level design needed the full tracer.
 - Level 3's mirror has a narrow angle window (about 2°). Arrow keys turn in 0.5° steps and the wheel in 1° steps so it stays playable. Targets were kept at radius 0.32 because larger ones block the neighbouring colours.
 - Generator (slice 6) added at the learner's request (2026-10-25): endless validated levels from seed + complexity. Solvability is proven by replaying each level's built-in solution. The solver only estimates difficulty and hunts shortcuts, because it can't prove unsolvability.
+- Learner feedback on slice 7 (2026-10-25): removed the sparkling specks in the beams, the pulsing flares and the target flares. Dust is reduced to a faint few, and target orbs are smooth and still (their spinning facets glinted). The light spill is now blurred to remove its blocky edges.
+- Asset downloads (learner-approved): 7 CC0 assets. Christoph Peters' blue-noise zip turned out to be 42 MB, so it was skipped in favour of shader-computed interleaved-gradient noise.

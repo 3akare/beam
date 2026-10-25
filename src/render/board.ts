@@ -1,22 +1,20 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { EMITTER_RADIUS, MIRROR_LENGTH, PRISM_SIDE, type BeamSegment } from '../game/optics';
+import type { LightSegment } from '../game/light';
+import { emitterOrigin, EMITTER_RADIUS, MIRROR_LENGTH, PRISM_SIDE } from '../game/optics';
 import type { Level, LightColor, PieceKind, Placed, Rect, Vec } from '../game/types';
-import { beamTexture, brickTextures, floorTexture, glowTexture } from './textures';
+import { brick, brushedSteel, concrete, fingerprints, silver } from './assets';
+import { BeamRenderer } from './beams';
+import { dustMotes, receiveBeamLight } from './lighting';
+import { glowTexture } from './textures';
 import { easeInOutCubic, easeOutBack, Tweens } from './tween';
 
 const WALL_H = 0.45;
 const BEAM_Y = 0.24;
 const RIM = 0.4;
 
-/** Display colours (sRGB) and HDR beam colours (bright enough to bloom). */
+/** Display colours (sRGB) for targets. */
 export const SWATCH: Record<LightColor, string> = { white: '#fff1dc', red: '#ff4040', green: '#3dff86', blue: '#4a86ff' };
-const BEAM_HDR: Record<LightColor, [number, number, number]> = {
-  white: [1.5, 1.42, 1.28],
-  red: [2.2, 0.22, 0.18],
-  green: [0.3, 1.8, 0.45],
-  blue: [0.32, 0.6, 2.4],
-};
 
 interface PieceView {
   group: THREE.Group;
@@ -37,6 +35,8 @@ interface TargetView {
 /** A level drawn from above: neon brick walls, emitter, targets, placed pieces, beams and the dial. */
 export class Board {
   readonly group = new THREE.Group();
+  /** Add to the stage's light scene: beam light that falls on the floor and walls. */
+  readonly lightGroup: THREE.Group;
 
   private tweens = new Tweens();
   private time = 0;
@@ -46,10 +46,7 @@ export class Board {
   private targets: TargetView[] = [];
   private pieces = new Map<string, PieceView>();
   private fixed: THREE.Group[] = [];
-  private beamLayer = new THREE.Group();
-  private beamPool: THREE.Mesh[] = [];
-  private beamGeo: THREE.PlaneGeometry;
-  private beamMats = new Map<string, THREE.MeshBasicMaterial>();
+  private beams: BeamRenderer;
   private dial = new THREE.Group();
   private dialKnob: THREE.Mesh;
   private wallGlow = 0.75;
@@ -65,22 +62,29 @@ export class Board {
     const tint = new THREE.Color(level.tint);
     const glow = this.own(glowTexture());
 
-    // Floor with a faint grid.
-    const floorTex = this.own(floorTexture());
-    // Dark, slightly glossy floor so beams and neon reflect softly.
-    floorTex.repeat.set(W, H);
-    const floor = new THREE.Mesh(
-      this.own(new THREE.PlaneGeometry(W, H)),
-      this.own(new THREE.MeshStandardMaterial({ map: floorTex, color: 0x9a9aa6, roughness: 0.6, metalness: 0.2 })),
+    // Floor: scuffed painted concrete, nearly black until a beam passes over it.
+    const floorMaps = concrete(W / 4, H / 4);
+    Object.values(floorMaps).forEach((t) => this.own(t));
+    const floorMat = receiveBeamLight(
+      this.own(
+        new THREE.MeshStandardMaterial({
+          map: floorMaps.map,
+          normalMap: floorMaps.normalMap,
+          roughnessMap: floorMaps.arm,
+          aoMap: floorMaps.arm,
+          color: 0x8a8a94,
+          roughness: 1,
+          metalness: 0,
+        }),
+      ),
+      { gain: 0.9 },
     );
+    const floor = new THREE.Mesh(this.own(new THREE.PlaneGeometry(W, H)), floorMat);
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
     this.group.add(floor);
 
-    // Neon brick walls: the board rim plus the level's own walls.
-    const bricks = brickTextures();
-    this.own(bricks.map);
-    this.own(bricks.emissiveMap);
+    // Neon brick walls: real fired brick whose faces glow in the level's colour.
     const rim: Rect[] = [
       { x: -RIM, y: -RIM, w: W + RIM * 2, h: RIM },
       { x: -RIM, y: H, w: W + RIM * 2, h: RIM },
@@ -91,21 +95,21 @@ export class Board {
       const vertical = r.h > r.w;
       const along = vertical ? r.h : r.w;
       const across = vertical ? r.w : r.h;
-      const tex = (t: THREE.Texture) => {
-        const c = this.own(t.clone());
-        c.repeat.set(along / 1.2, Math.max(across, 0.3) / 0.6);
-        c.rotation = vertical ? Math.PI / 2 : 0;
-        c.needsUpdate = true;
-        return c;
-      };
-      const mat = this.own(
-        new THREE.MeshStandardMaterial({
-          map: tex(bricks.map),
-          emissiveMap: tex(bricks.emissiveMap),
-          emissive: tint,
-          emissiveIntensity: this.wallGlow,
-          roughness: 0.8,
-        }),
+      const maps = brick(along / 2.2, Math.max(across, 0.4) / 2.2, vertical ? Math.PI / 2 : 0);
+      Object.values(maps).forEach((t) => this.own(t));
+      const mat = receiveBeamLight(
+        this.own(
+          new THREE.MeshStandardMaterial({
+            map: maps.map,
+            normalMap: maps.normalMap,
+            normalScale: new THREE.Vector2(1.4, 1.4),
+            roughnessMap: maps.arm,
+            emissive: tint,
+            emissiveIntensity: this.wallGlow,
+            roughness: 1,
+          }),
+        ),
+        { gain: 1.6, neonBricks: true },
       );
       const mesh = new THREE.Mesh(this.own(new RoundedBoxGeometry(r.w, WALL_H, r.h, 2, 0.04)), mat);
       mesh.position.copy(this.toWorld({ x: r.x + r.w / 2, y: r.y + r.h / 2 }, WALL_H / 2));
@@ -115,8 +119,30 @@ export class Board {
     }
 
     // Emitter: graphite housing, brass collar, glowing lens.
-    const graphite = this.own(new THREE.MeshPhysicalMaterial({ color: 0x2b2d35, metalness: 0.75, roughness: 0.32, clearcoat: 0.6 }));
-    const brass = this.own(new THREE.MeshPhysicalMaterial({ color: 0xd8b073, metalness: 1, roughness: 0.25 }));
+    const steel = brushedSteel(1, 1);
+    Object.values(steel).forEach((t) => this.own(t));
+    const graphite = this.own(
+      new THREE.MeshPhysicalMaterial({
+        color: 0x30333b,
+        metalness: 0.85,
+        roughness: 0.55,
+        roughnessMap: steel.roughnessMap,
+        normalMap: steel.normalMap,
+        normalScale: new THREE.Vector2(0.5, 0.5),
+        clearcoat: 0.5,
+        clearcoatRoughness: 0.2,
+      }),
+    );
+    const brass = this.own(
+      new THREE.MeshPhysicalMaterial({
+        color: 0xd9ad68,
+        metalness: 1,
+        roughness: 0.5,
+        roughnessMap: steel.roughnessMap,
+        normalMap: steel.normalMap,
+        normalScale: new THREE.Vector2(0.3, 0.3),
+      }),
+    );
     const housing = new THREE.Mesh(this.own(new RoundedBoxGeometry(0.78, 0.42, 0.6, 3, 0.1)), graphite);
     housing.position.set(-0.05, 0.21, 0);
     const collar = new THREE.Mesh(this.own(new THREE.CylinderGeometry(0.22, 0.22, 0.12, 40)), brass);
@@ -129,7 +155,7 @@ export class Board {
     lens.rotation.z = Math.PI / 2;
     lens.position.set(EMITTER_RADIUS - 0.08, BEAM_Y, 0);
     for (const m of [housing, collar]) m.castShadow = m.receiveShadow = true;
-    this.emitter.add(housing, collar, lens, this.halo(glow, new THREE.Color(1, 0.95, 0.85), 1.1, EMITTER_RADIUS, 0.6));
+    this.emitter.add(housing, collar, lens);
     this.emitter.position.copy(this.toWorld(level.emitter));
     this.emitter.rotation.y = -level.emitter.angle;
     this.group.add(this.emitter);
@@ -137,7 +163,7 @@ export class Board {
     // Targets: a dark plinth, a glossy ring and a crystal orb in the target's colour.
     const plinthGeo = this.own(new THREE.CylinderGeometry(0.38, 0.41, 0.06, 48));
     const ringGeo = this.own(new THREE.TorusGeometry(0.29, 0.05, 20, 72));
-    const orbGeo = this.own(new THREE.IcosahedronGeometry(0.14, 2));
+    const orbGeo = this.own(new THREE.SphereGeometry(0.14, 32, 16));
     for (const t of level.targets) {
       const color = new THREE.Color(SWATCH[t.color]);
       const body = color.clone().multiplyScalar(0.55);
@@ -145,13 +171,13 @@ export class Board {
       const plinth = new THREE.Mesh(plinthGeo, graphite);
       plinth.position.y = 0.03;
       const ringMat = this.own(
-        new THREE.MeshPhysicalMaterial({ color: body, emissive: color, emissiveIntensity: 0.06, metalness: 0.5, roughness: 0.25, clearcoat: 1 }),
+        new THREE.MeshPhysicalMaterial({ color: body, emissive: color, emissiveIntensity: 0.06, metalness: 0.3, roughness: 0.5, envMapIntensity: 0.4 }),
       );
       const ring = new THREE.Mesh(ringGeo, ringMat);
       ring.rotation.x = Math.PI / 2;
       ring.position.y = 0.12;
       const orbMat = this.own(
-        new THREE.MeshPhysicalMaterial({ color: body, emissive: color, emissiveIntensity: 0.05, roughness: 0.1, clearcoat: 1, flatShading: true }),
+        new THREE.MeshPhysicalMaterial({ color: body, emissive: color, emissiveIntensity: 0.05, roughness: 0.55, envMapIntensity: 0.3 }),
       );
       const orb = new THREE.Mesh(orbGeo, orbMat);
       orb.position.y = 0.2;
@@ -165,7 +191,22 @@ export class Board {
     }
 
     // Piece parts, shared by every placed mirror and prism.
-    const chrome = this.own(new THREE.MeshPhysicalMaterial({ color: 0xaab3c0, metalness: 1, roughness: 0.14, envMapIntensity: 0.55 }));
+    const mirrorMaps = silver(1, 0.25);
+    const smudge = fingerprints(1, 1);
+    [...Object.values(mirrorMaps), ...Object.values(smudge)].forEach((t) => this.own(t));
+    const chrome = this.own(
+      new THREE.MeshPhysicalMaterial({
+        color: 0xc9d2de,
+        metalness: 1,
+        roughness: 0.35,
+        roughnessMap: mirrorMaps.roughnessMap,
+        normalMap: mirrorMaps.normalMap,
+        normalScale: new THREE.Vector2(0.25, 0.25),
+        clearcoat: 1,
+        clearcoatRoughness: 0.08,
+        clearcoatRoughnessMap: smudge.roughnessMap,
+      }),
+    );
     this.mirrorParts = [
       { geo: this.own(new RoundedBoxGeometry(MIRROR_LENGTH - 0.1, 0.24, 0.12, 3, 0.04)), mat: chrome, y: BEAM_Y },
       { geo: this.own(new RoundedBoxGeometry(0.12, 0.3, 0.2, 3, 0.04)), mat: graphite, y: 0.15, x: -MIRROR_LENGTH / 2 + 0.04 },
@@ -175,20 +216,26 @@ export class Board {
     const prismGeo = this.own(prismGeometry());
     const glass = this.own(
       new THREE.MeshPhysicalMaterial({
-        color: 0xe8f4ff,
+        color: 0xeef6ff,
         metalness: 0,
-        roughness: 0.03,
+        roughness: 0.12,
+        roughnessMap: smudge.roughnessMap,
         transmission: 1,
-        thickness: 0.5,
-        ior: 1.5,
+        thickness: 0.6,
+        ior: 1.52,
+        dispersion: 6,
+        attenuationColor: new THREE.Color(0xdff0ff),
+        attenuationDistance: 2.5,
+        specularIntensity: 1,
         clearcoat: 1,
-        iridescence: 0.6,
+        clearcoatRoughness: 0.05,
+        emissive: new THREE.Color(0x9fb8d8),
+        emissiveIntensity: 0.05,
+        iridescence: 0.35,
         iridescenceIOR: 1.3,
-        transparent: true,
-        opacity: 0.9,
       }),
     );
-    const edgeMat = this.own(new THREE.LineBasicMaterial({ color: new THREE.Color(0.8, 0.9, 1.05) }));
+    const edgeMat = this.own(new THREE.LineBasicMaterial({ color: new THREE.Color(1.05, 1.15, 1.3) }));
     this.prismParts = [
       { geo: prismGeo, mat: glass, y: 0 },
       { geo: this.own(new THREE.EdgesGeometry(prismGeo, 25)), mat: edgeMat, y: 0, edges: true },
@@ -219,30 +266,14 @@ export class Board {
       this.fixed.push(view.group);
     }
 
-    // Beams: soft additive ribbons, pooled and re-laid on every trace.
-    this.beamGeo = this.own(new THREE.PlaneGeometry(1, 1));
-    this.beamGeo.rotateX(-Math.PI / 2);
-    const beamTex = this.own(beamTexture());
-    for (const color of Object.keys(BEAM_HDR) as LightColor[]) {
-      for (const layer of ['core', 'halo', 'glass']) {
-        const [r, g, b] = BEAM_HDR[color];
-        const k = layer === 'halo' ? 0.22 : 1;
-        this.beamMats.set(
-          `${color}:${layer}`,
-          this.own(
-            new THREE.MeshBasicMaterial({
-              color: new THREE.Color(r * k, g * k, b * k),
-              alphaMap: beamTex,
-              transparent: true,
-              blending: THREE.AdditiveBlending,
-              depthWrite: false,
-              depthTest: layer !== 'glass', // light inside glass shows through the prism
-            }),
-          ),
-        );
-      }
-    }
-    this.group.add(this.beamLayer);
+    // Light: volumetric beams and flares, plus their glow for the floor; dust that catches it.
+    this.beams = new BeamRenderer((p, y) => this.toWorld(p, y));
+    this.group.add(this.beams.group);
+    this.lightGroup = this.beams.lightGroup;
+    const dust = dustMotes(W, H);
+    this.own(dust.geometry);
+    this.own(dust.material as THREE.Material);
+    this.group.add(dust);
 
     // Rotation dial: a thin ring with 15° ticks and a knob at the piece's angle.
     const dialMat = this.own(
@@ -334,41 +365,9 @@ export class Board {
     return { group, kind, invalid };
   }
 
-  setBeams(segments: BeamSegment[]) {
-    let n = 0;
-    const take = () => {
-      let m = this.beamPool[n++];
-      if (!m) {
-        m = new THREE.Mesh(this.beamGeo);
-        m.frustumCulled = false;
-        this.beamPool.push(m);
-        this.beamLayer.add(m);
-      }
-      m.visible = true;
-      return m;
-    };
-    for (const s of segments) {
-      const a = this.toWorld(s.a, BEAM_Y);
-      const b = this.toWorld(s.b, BEAM_Y);
-      const len = a.distanceTo(b);
-      if (len < 1e-3) continue;
-      const angle = -Math.atan2(b.z - a.z, b.x - a.x);
-      const wide = s.color === 'white';
-      const layers: [string, number, number][] = s.inside
-        ? [['glass', wide ? 0.1 : 0.07, 0.02]]
-        : [
-            ['halo', wide ? 0.62 : 0.42, 0],
-            ['core', wide ? 0.16 : 0.1, 0.01],
-          ];
-      for (const [layer, width, lift] of layers) {
-        const m = take();
-        m.material = this.beamMats.get(`${s.color}:${layer}`)!;
-        m.position.copy(a).lerp(b, 0.5).setY(BEAM_Y + lift);
-        m.rotation.y = angle;
-        m.scale.set(len + (layer === 'halo' ? 0 : width * 0.5), 1, width);
-      }
-    }
-    for (let i = n; i < this.beamPool.length; i++) this.beamPool[i].visible = false;
+  /** Lay out the traced light (see game/light.ts). */
+  setLight(segments: LightSegment[]) {
+    this.beams.set(segments, { p: emitterOrigin(this.level), angle: this.level.emitter.angle });
   }
 
   setLit(lit: boolean[]) {
@@ -420,14 +419,14 @@ export class Board {
     for (const t of this.targets) {
       t.level += ((t.lit ? 1 : 0) - t.level) * Math.min(1, dt * 8);
       const k = t.level;
-      t.ring.emissiveIntensity = 0.06 + k * 1.6;
-      t.orb.emissiveIntensity = 0.05 + k * 2.4;
-      t.orbMesh.rotation.y += dt * (0.3 + k * 1.5);
-      (t.halo.material as THREE.MeshBasicMaterial).opacity = k * (0.45 + Math.sin(this.time * 4) * 0.05);
+      t.ring.emissiveIntensity = 0.06 + k * 1.0;
+      t.orb.emissiveIntensity = 0.05 + k * 1.3;
+      (t.halo.material as THREE.MeshBasicMaterial).opacity = k * 0.45;
     }
   }
 
   dispose() {
+    this.beams.dispose();
     this.group.removeFromParent();
     for (const d of this.disposables) d.dispose();
   }
