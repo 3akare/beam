@@ -16,7 +16,7 @@ A 2D light-bending puzzle for players who like tactile physics puzzles. Source: 
 5. Light that hits a mirror reflects. White light that enters a prism leaves as three separated colour rays (red, green, blue). Coloured light passing through a prism refracts and keeps its colour.
 6. A target lights when a ray of its colour reaches it. White targets need white light.
 7. When every target stays lit for a moment, the level completes: the targets flare, the walls pulse, and the next level fades in.
-8. After level 3, an end card offers "play again".
+8. After level 10, an end card offers "play again". Levels 1–3 are handcrafted, and 4–10 are curated from the generator ahead of time.
 
 ## Screens and Layout
 A single full-screen board. Top left: the level number and name. Top right: restart and sound. Bottom centre: the inventory tray. A centred end card at the end.
@@ -26,7 +26,7 @@ A single full-screen board. Top left: the level number and name. Top right: rest
 - Walls: dark blocks with a warm neon brick glow, tinted per level.
 - Beams: thick, soft-edged and additive. White is warm white; the colour bands are vivid red, green and blue. They bloom against the dark.
 - Pieces: lit 3D-looking objects seen from above. Chrome mirror bars with dark end caps, a glass triangular prism with bright edges, a brass emitter with a glowing lens, and targets as crystal orbs in glowing rings.
-- The rotation dial is a thin glowing ring with tick marks and a degree readout. The UI text is a small lowercase monospace.
+- The rotation dial is orange on a dark backing with 5°/15° ticks, a big knob and a degree readout. It brightens on hover and glows while turning. The UI text is a small lowercase monospace.
 
 ## Features and Behavior
 
@@ -36,7 +36,8 @@ A single full-screen board. Top left: the level number and name. Top right: rest
 - Tray counts update as pieces are placed and returned.
 
 ### Rotating
-- Selecting a piece shows the dial. Dragging anywhere on the dial ring rotates the piece to the pointer's angle. The mouse wheel turns it 1° per notch (5° with Shift), and the arrow keys turn it 1°.
+- Selecting a piece shows the dial. Dragging on the dial ring rotates the piece in 5° clicks, and so do the mouse wheel and arrow keys. Hold Shift for fine control. Every solution sits on the 5° grid.
+- A target glows faintly as a beam of its colour gets close (a "warmer/colder" hint).
 - A soft tick sounds every 15°.
 
 ### Optics

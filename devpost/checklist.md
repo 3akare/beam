@@ -79,6 +79,16 @@ Build mode: fast
   Learner check: Look at a prism level and say whether the light now feels right.
   Commit: `Make light physical: spectral dispersion, floor light, real materials`
 
+- [x] **8. Ten levels, an easier feel, an orange dial, sound that works, fast on Vercel**
+  Becomes usable: A 10-level campaign (3 handcrafted plus 7 curated by `npm run campaign`) ending in the end card. 5° rotation detents, with solutions on the grid. A warmer/colder target glow. An orange high-contrast dial with a big knob and hover/active states. Audio that unlocks on any gesture, is louder, uses iOS playback mode and plays a confirming chime.
+  Why now: Learner feedback (2026-10-25): wants 10 levels, finds it hard, didn't hear audio, wants it very fast on Vercel.
+  PRD ref: `prd.md > Rotating`, `prd.md > The Core Journey` (step 8)
+  Spec ref: `spec.md > Where It Runs and How Someone Tries It`
+  Build: Campaign script and JSON, detents, warmth, dial, audio unlock, 512px WebP textures plus a 512 HDRI (10 MB → 0.7 MB), lazy HDRI, generator moved out of the main bundle (worker only for `?seed=`), shadows rendered on change only, a quarter-res light buffer, half-res glass, DPR ≤ 1.5 with adaptive drop, a three.js vendor chunk, and `vercel.json` cache headers.
+  Verify (mechanical): `npm run verify` passes. Build: JS is 19 KB + 155 KB gzipped. A scripted play-through of all 10 levels reaches the end card. The AudioContext reports running after a click.
+  Learner check: Play 1→10 with sound on, and say whether the difficulty and smoothness feel right.
+  Commit: `Ten-level campaign, 5° detents, orange dial, audio unlock, lighter build`
+
 ## Hands-on Checkpoints
 
 - [ ] Early usable behavior explored — combined with final review (learner asked for minimal ceremony)
@@ -109,3 +119,5 @@ Activity mode:
 - Generator (slice 6) added at the learner's request (2026-10-25): endless validated levels from seed + complexity. Solvability is proven by replaying each level's built-in solution. The solver only estimates difficulty and hunts shortcuts, because it can't prove unsolvability.
 - Learner feedback on slice 7 (2026-10-25): removed the sparkling specks in the beams, the pulsing flares and the target flares. Dust is reduced to a faint few, and target orbs are smooth and still (their spinning facets glinted). The light spill is now blurred to remove its blocky edges.
 - Asset downloads (learner-approved): 7 CC0 assets. Christoph Peters' blue-noise zip turned out to be 42 MB, so it was skipped in favour of shader-computed interleaved-gradient noise.
+- Endless mode replaced by a fixed 10-level campaign at the learner's request. The generator is now an authoring tool (`npm run campaign`, `npm run generate`) plus an optional `?seed=` worker.
+- The HDRI is clamped and desaturated at load: its raw lamps (about 1000×) and cyan cast made chrome mirrors glow green.
