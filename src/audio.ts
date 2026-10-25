@@ -119,6 +119,33 @@ export class Sound {
     [0, 1, 2, 3, 4, 5, 7, 9].forEach((step, i) => this.note(step, i * 0.11, 0.12));
   }
 
+  /** A piece set down on the board. */
+  place() {
+    this.note(0, 0, 0.12);
+  }
+
+  /** A quiet click as a piece turns past each 15° mark. */
+  tick() {
+    if (!this.ctx || !this.fx) return;
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const env = this.ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.value = hz(this.root + 36);
+    env.gain.setValueAtTime(0.035, t);
+    env.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+    osc.connect(env).connect(this.fx);
+    osc.start(t);
+    osc.stop(t + 0.06);
+  }
+
+  /** A target lighting up; each colour has its own step in the scale. */
+  chime(color: 'white' | 'red' | 'green' | 'blue') {
+    const step = { white: 7, red: 5, green: 7, blue: 9 }[color];
+    this.note(step, 0, 0.13);
+    this.note(step + 2, 0.08, 0.06);
+  }
+
   toggleMuted() {
     this.muted = !this.muted;
     try {

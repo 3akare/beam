@@ -1,49 +1,35 @@
 import './style.css';
 import { Sound } from './audio';
-import { initialOrientations, trace, turnSet } from './game/beam';
 import { LEVELS } from './game/levels';
-import type { Level, Orientations } from './game/types';
-import { TwistInput } from './input';
+import { canPlace, MIRROR_LENGTH, trace } from './game/optics';
+import type { Level, PieceKind, Placed, Vec } from './game/types';
+import { PlayInput, type PlayModel } from './input';
 import { Board } from './render/board';
 import { Stage } from './render/scene';
 import { UI } from './ui';
 
-type Phase = 'assembling' | 'playing' | 'solving' | 'done';
-
-/** A piece's visual rotation, sprung toward its snapped target (both in quarter turns). */
-interface Spin {
-  value: number;
-  target: number;
-  vel: number;
-}
+type Phase = 'assembling' | 'playing' | 'complete' | 'done';
 
 const STORAGE_KEY = 'beam.level';
-const SPRING = 220;
-const DAMPING = 2 * Math.sqrt(SPRING) * 0.72; // a touch under-damped: a soft settle, not a bounce
+const HOLD_SECONDS = 0.6;
 
 const stage = new Stage(document.querySelector<HTMLCanvasElement>('#stage')!);
-const ui = new UI(document.querySelector<HTMLElement>('#ui')!, LEVELS.length);
+const ui = new UI(document.querySelector<HTMLElement>('#ui')!);
 const sound = new Sound();
-ui.setMuted(sound.muted);
-const toggleSound = () => {
-  sound.start();
-  ui.setMuted(sound.toggleMuted());
-};
-ui.onSoundToggle(toggleSound);
-window.addEventListener('keydown', (e) => {
-  if (e.key === 'm' || e.key === 'M') toggleSound();
-});
-window.addEventListener('pointerdown', () => sound.start());
 
 let levelIndex = 0;
 let level: Level;
 let board: Board | null = null;
 let phase: Phase = 'assembling';
-let orientations: Orientations = {};
-let spins: Record<string, Spin> = {};
-let grabbed: { ids: string[]; base: Record<string, number> } | null = null;
-let moving = new Set<string>();
-let touched = false;
+let placed: Placed[] = [];
+let selected: string | null = null;
+let invalid: string | null = null;
+/** Where a piece being dragged came from (null = the tray), so a bad drop can undo. */
+const origins = new Map<string, Vec | null>();
+let nextId = 1;
+let dirty = true;
+let lit: boolean[] = [];
+let solvedFor = 0;
 
 function loadProgress(): number {
   const fromUrl = Number(new URLSearchParams(location.search).get('level'));
@@ -60,98 +46,176 @@ function saveProgress(index: number) {
   try {
     localStorage.setItem(STORAGE_KEY, String(index));
   } catch {
-    // Private mode or blocked storage: play on without resume.
+    // Storage blocked: play on without resume.
   }
 }
 
-function loadLevel(index: number, instant = false) {
+function remaining(kind: PieceKind) {
+  return level.inventory[kind] - placed.filter((p) => p.kind === kind).length;
+}
+
+function refreshTray() {
+  ui.setInventory({ mirror: remaining('mirror'), prism: remaining('prism') }, level.inventory);
+}
+
+function loadLevel(index: number) {
   board?.dispose();
   levelIndex = index;
   level = LEVELS[index];
-  orientations = initialOrientations(level);
-  spins = Object.fromEntries(level.pieces.map((p) => [p.id, { value: p.o, target: p.o, vel: 0 }]));
-  grabbed = null;
-  moving = new Set();
+  placed = [];
+  origins.clear();
+  selected = invalid = null;
+  lit = level.targets.map(() => false);
+  solvedFor = 0;
   phase = 'assembling';
-  sound.setLevel(index);
 
-  board = new Board(level, index === 0 && !touched);
+  board = new Board(level);
   stage.scene.add(board.group);
-  stage.setPalette(level.palette, instant);
-  ui.setAccent(level.palette.accent);
-  ui.setLevel(index);
+  stage.fit(level.width, level.height);
+  stage.setTint(level.tint);
+  sound.setLevel(index);
+  ui.setTitle(index, level.name);
+  ui.setAccent(level.tint);
+  refreshTray();
+  ui.setFade(false);
+  board.setBeams([]);
   board.playAssemble().then(() => {
     phase = 'playing';
-    refreshBeam();
+    dirty = true;
   });
 }
 
-/** Pieces that are being held or are still springing into place. */
-function movingPieces(): Set<string> {
-  const moving = new Set(grabbed?.ids ?? []);
-  for (const [id, s] of Object.entries(spins)) {
-    if (Math.abs(s.value - s.target) > 0.004 || Math.abs(s.vel) > 0.02) moving.add(id);
-  }
-  return moving;
+function select(id: string | null) {
+  selected = id;
+  board?.setSelected(id ? placed.find((p) => p.id === id)! : null);
 }
 
-function refreshBeam() {
-  if (!board || phase !== 'playing') return;
-  const moving = movingPieces();
-  const tr = trace(level, orientations, moving);
-  board.setBeam(tr);
-  if (tr.escaped && moving.size === 0) solve();
+function retrace() {
+  if (!board) return;
+  const r = trace(level, placed);
+  board.setBeams(r.segments);
+  board.setLit(r.lit);
+  r.lit.forEach((on, i) => on && !lit[i] && phase === 'playing' && sound.chime(level.targets[i].color));
+  lit = r.lit;
 }
 
-async function solve() {
-  phase = 'solving';
-  const solvedBoard = board!;
+async function complete() {
+  phase = 'complete';
+  select(null);
+  sound.solve();
   const next = levelIndex + 1;
   saveProgress(next < LEVELS.length ? next : 0);
-  sound.solve();
-  await solvedBoard.playSolve();
-  if (solvedBoard !== board) return;
+  const finished = board!;
+  await finished.playComplete();
+  if (finished !== board) return;
+  ui.setFade(true);
+  await new Promise((r) => setTimeout(r, 750));
   if (next < LEVELS.length) {
     loadLevel(next);
   } else {
     phase = 'done';
     ui.showEnd(() => loadLevel(0));
+    ui.setFade(false);
   }
 }
 
-function turn(ids: string[], quarterTurns: number) {
-  for (const id of ids) {
-    spins[id].target = Math.round(spins[id].target) + quarterTurns;
-    orientations[id] = ((spins[id].target % 4) + 4) % 4;
-  }
+function restart() {
+  if (phase !== 'playing') return;
+  placed = [];
+  origins.clear();
+  invalid = null;
+  select(null);
+  refreshTray();
+  dirty = true;
 }
 
-new TwistInput(stage.renderer.domElement, stage.camera, {
-  pickables: () => (phase === 'playing' ? board?.pickables ?? [] : []),
-  center: (id) => board!.pieceCenter(id),
+const model: PlayModel = {
   enabled: () => phase === 'playing',
-  onGrab(id) {
-    touched = true;
-    board?.hideHint();
-    const ids = turnSet(level, id);
-    grabbed = { ids, base: Object.fromEntries(ids.map((i) => [i, spins[i].value])) };
-    refreshBeam();
-  },
-  onTwist(_id, q) {
-    if (!grabbed) return;
-    for (const i of grabbed.ids) {
-      spins[i].value = spins[i].target = grabbed.base[i] + q;
-      spins[i].vel = 0;
+  toBoard: (x, y) => board!.toBoard(stage.toFloor(x, y)),
+  overTray: (x, y) => ui.overTray(x, y),
+  pieceAt(p) {
+    for (let i = placed.length - 1; i >= 0; i--) {
+      const q = placed[i];
+      if (q.kind === 'prism') {
+        if (Math.hypot(p.x - q.x, p.y - q.y) < 0.6) return q.id;
+      } else {
+        // Distance to the mirror's bar.
+        const ux = Math.cos(q.angle);
+        const uy = Math.sin(q.angle);
+        const along = Math.max(-MIRROR_LENGTH / 2, Math.min(MIRROR_LENGTH / 2, (p.x - q.x) * ux + (p.y - q.y) * uy));
+        if (Math.hypot(p.x - (q.x + ux * along), p.y - (q.y + uy * along)) < 0.32) return q.id;
+      }
     }
+    return null;
   },
-  onRelease(id, tapped) {
-    if (!grabbed) return;
-    const { ids, base } = grabbed;
-    grabbed = null;
-    const steps = tapped ? 1 : Math.round(spins[id].value - base[id]);
-    for (const i of ids) spins[i].target = Math.round(base[i]);
-    turn(ids, steps);
+  piece: (id) => placed.find((p) => p.id === id) ?? null,
+  selected: () => selected,
+  select,
+  takeFromTray(kind, p) {
+    if (remaining(kind) <= 0) return null;
+    const id = `p${nextId++}`;
+    placed.push({ id, kind, x: p.x, y: p.y, angle: kind === 'mirror' ? -Math.PI / 4 : 0 });
+    origins.set(id, null);
+    invalid = canPlace(level, placed.filter((q) => q.id !== id), p) ? null : id;
+    refreshTray();
+    dirty = true;
+    return id;
   },
+  move(id, p) {
+    const piece = placed.find((q) => q.id === id)!;
+    if (!origins.has(id)) origins.set(id, { x: piece.x, y: piece.y });
+    piece.x = p.x;
+    piece.y = p.y;
+    invalid = canPlace(level, placed.filter((q) => q.id !== id), p) ? null : id;
+    dirty = true;
+  },
+  rotate(id, angle) {
+    const piece = placed.find((q) => q.id === id)!;
+    const a = ((angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+    const notch = (x: number) => Math.floor((x * 180) / Math.PI / 15);
+    if (notch(a) !== notch(piece.angle)) sound.tick();
+    piece.angle = a;
+    dirty = true;
+  },
+  drop(id, overTray) {
+    const origin = origins.get(id);
+    origins.delete(id);
+    const piece = placed.find((q) => q.id === id)!;
+    if (overTray || (invalid === id && origin === null)) {
+      model.returnToTray(id);
+    } else if (invalid === id && origin) {
+      piece.x = origin.x;
+      piece.y = origin.y;
+    } else {
+      sound.place();
+    }
+    invalid = null;
+    dirty = true;
+  },
+  returnToTray(id) {
+    placed = placed.filter((q) => q.id !== id);
+    if (selected === id) select(null);
+    refreshTray();
+    dirty = true;
+  },
+};
+
+const input = new PlayInput(stage.renderer.domElement, model);
+ui.onTrayPress((kind, e) => {
+  sound.start();
+  input.startFromTray(kind, e);
+});
+ui.onRestart(restart);
+ui.setMuted(sound.muted);
+const toggleSound = () => {
+  sound.start();
+  ui.setMuted(sound.toggleMuted());
+};
+ui.onSoundToggle(toggleSound);
+window.addEventListener('pointerdown', () => sound.start());
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'm' || e.key === 'M') toggleSound();
+  if (e.key === 'r' || e.key === 'R') restart();
 });
 
 let last = performance.now();
@@ -159,50 +223,55 @@ function frame(now: number) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
 
-  for (const [id, s] of Object.entries(spins)) {
-    if (!grabbed?.ids.includes(id)) {
-      s.vel += (SPRING * (s.target - s.value) - DAMPING * s.vel) * dt;
-      s.value += s.vel * dt;
-      if (Math.abs(s.value - s.target) < 0.004 && Math.abs(s.vel) < 0.02) {
-        s.value = s.target;
-        s.vel = 0;
-      }
-    }
-    board?.setPieceAngle(id, s.value);
+  if (dirty && board) {
+    dirty = false;
+    board.syncPieces(placed, invalid);
+    if (selected) board.setSelected(placed.find((p) => p.id === selected) ?? null);
+    if (phase === 'playing') retrace();
   }
 
-  // Re-trace only when the set of moving pieces changes (grab, snap, settle).
-  const nowMoving = movingPieces();
-  const settled = [...moving].filter((id) => !nowMoving.has(id));
-  if (settled.length || nowMoving.size !== moving.size) {
-    if (settled.length && phase === 'playing') {
-      const id = settled[0];
-      sound.note(level.pieces.findIndex((p) => p.id === id) * 2 + orientations[id]);
-    }
-    moving = nowMoving;
-    refreshBeam();
+  // Complete once every target has stayed lit for a moment with nothing in hand.
+  const holding = origins.size > 0 || document.body.classList.contains('turning');
+  if (phase === 'playing' && lit.length && lit.every(Boolean) && !holding) {
+    solvedFor += dt;
+    if (solvedFor >= HOLD_SECONDS) complete();
+  } else {
+    solvedFor = 0;
   }
 
-  stage.update(dt);
+  const sel = selected ? placed.find((p) => p.id === selected) : null;
+  if (sel && board && phase === 'playing') {
+    const at = stage.toScreen(board.toWorld({ x: sel.x, y: sel.y - 0.95 }));
+    const raw = ((((-sel.angle * 180) / Math.PI) % 360) + 360) % 360;
+    const degrees = raw >= 359.95 ? 0 : raw;
+    ui.setReadout({ ...at, degrees });
+  } else {
+    ui.setReadout(null);
+  }
+
   board?.update(dt);
   stage.render();
   requestAnimationFrame(frame);
 }
 
-loadLevel(loadProgress(), true);
+loadLevel(loadProgress());
 requestAnimationFrame(frame);
 
 if (import.meta.env.DEV) {
   // Hooks for scripted checks in the browser.
   Object.assign(window, {
     __beam: {
-      tap: (id: string) => {
+      state: () => ({ levelIndex, phase, placed: placed.map((p) => ({ ...p })), lit: [...lit], selected, invalid }),
+      /** Place the level's stored solution. */
+      solve: () => {
         if (phase !== 'playing') return false;
-        turn(turnSet(level, id), 1);
+        placed = level.solution.map((p) => ({ ...p, id: `p${nextId++}` }));
+        refreshTray();
+        dirty = true;
         return true;
       },
-      state: () => ({ levelIndex, phase, orientations: { ...orientations }, audio: sound.running, muted: sound.muted }),
       load: (i: number) => loadLevel(i),
+      screen: (p: Vec) => stage.toScreen(board!.toWorld(p)),
     },
   });
 }

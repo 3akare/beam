@@ -1,57 +1,32 @@
-// Checks every level: well-formed, starts unsolved, and is solvable.
-// Breadth-first search over tap moves gives the shortest solution.
-import { initialOrientations, trace, turnSet } from '../src/game/beam';
+// Checks every level: the empty board is unsolved, the stored solution solves it,
+// its pieces are legally placed and within the inventory, and how much slack it has.
+import { canPlace, solved } from '../src/game/optics';
 import { LEVELS } from '../src/game/levels';
-import type { Level, Orientations } from '../src/game/types';
+import type { Level, Placement } from '../src/game/types';
 
 function check(level: Level, n: number): string[] {
   const errors: string[] = [];
-  const inside = (x: number, y: number) => x >= 0 && y >= 0 && x < level.size && y < level.size;
-  const taken = new Set<string>();
-  const place = (what: string, x: number, y: number) => {
-    if (!inside(x, y)) errors.push(`${what} at ${x},${y} is outside the grid`);
-    const k = `${x},${y}`;
-    if (taken.has(k)) errors.push(`${what} at ${x},${y} overlaps another cell`);
-    taken.add(k);
-  };
-  place('core', level.core.x, level.core.y);
-  level.walls.forEach(([x, y]) => place('wall', x, y));
-  level.pieces.forEach((p) => place(`piece ${p.id}`, p.x, p.y));
+  if (solved(level, [])) errors.push('solved with an empty board');
 
-  const { x: gx, y: gy } = level.gate;
-  const onRim = (gx === -1 || gx === level.size) !== (gy === -1 || gy === level.size);
-  const besideGrid = (gx >= 0 && gx < level.size) || (gy >= 0 && gy < level.size);
-  if (!onRim || !besideGrid) errors.push(`gate ${gx},${gy} is not on an edge`);
-
-  const ids = new Set(level.pieces.map((p) => p.id));
-  for (const p of level.pieces) for (const t of p.turns ?? []) if (!ids.has(t)) errors.push(`piece ${p.id} turns unknown ${t}`);
-  if (level.pieces.every((p) => p.follower)) errors.push('no touchable pieces');
-
-  const start = initialOrientations(level);
-  if (trace(level, start).escaped) errors.push('starts already solved');
-
-  const touchable = level.pieces.filter((p) => !p.follower).map((p) => p.id);
-  const stateKey = (o: Orientations) => level.pieces.map((p) => ((o[p.id] % 4) + 4) % 4).join('');
-  const queue: [Orientations, string[]][] = [[start, []]];
-  const seen = new Set([stateKey(start)]);
-  let solution: string[] | null = null;
-  while (queue.length && !solution) {
-    const [o, moves] = queue.shift()!;
-    for (const id of touchable) {
-      const next = { ...o };
-      for (const t of turnSet(level, id)) next[t] = (next[t] + 1) % 4;
-      const k = stateKey(next);
-      if (seen.has(k)) continue;
-      seen.add(k);
-      if (trace(level, next).escaped) {
-        solution = [...moves, id];
-        break;
-      }
-      queue.push([next, [...moves, id]]);
-    }
+  for (const kind of ['mirror', 'prism'] as const) {
+    const used = level.solution.filter((p) => p.kind === kind).length;
+    if (used > level.inventory[kind]) errors.push(`solution uses ${used} ${kind}(s), inventory has ${level.inventory[kind]}`);
   }
-  if (!solution) errors.push('unsolvable');
-  else console.log(`level ${n}: ok, shortest solution ${solution.length} taps (${solution.join(' ')}), ${seen.size} states`);
+  level.solution.forEach((p, i) => {
+    const others = level.solution.filter((_, j) => j !== i);
+    if (!canPlace(level, others, p)) errors.push(`solution ${p.kind} at ${p.x},${p.y} is not a legal spot`);
+  });
+  if (!solved(level, level.solution)) errors.push('stored solution does not solve it');
+
+  // Angle slack: how far each piece can be turned (in 0.5° steps) and still solve.
+  const slack = level.solution.map((p, i) => {
+    let deg = 0;
+    const turned = (d: number): Placement[] =>
+      level.solution.map((q, j) => (j === i ? { ...q, angle: q.angle + (d * Math.PI) / 180 } : q));
+    while (deg < 10 && solved(level, turned(deg + 0.5)) && solved(level, turned(-(deg + 0.5)))) deg += 0.5;
+    return `${p.kind} ±${deg}°`;
+  });
+  if (!errors.length) console.log(`level ${n} "${level.name}": ok (${slack.join(', ')})`);
   return errors;
 }
 

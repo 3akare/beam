@@ -2,43 +2,44 @@
 doc: scope
 status: approved
 ---
-<!-- Approved by delegation: the learner asked the agent to make the planning decisions and go straight to building (2026-10-23). -->
+<!-- v1 approved by delegation (2026-10-23). v2 direction chosen by the learner (2026-10-25):
+     "2D, but the assets high quality and 3D-like", Prism Rules as the vibe, option 2 (look + mechanics), place from inventory. -->
 
 # beam
 
-A calm, wordless 3D puzzle in the browser: twist the pieces of a floating stone "seed" until the light trapped inside escapes.
+A 2D light-bending puzzle in the browser: place and turn mirrors and prisms to split a white beam into colours and light every target.
 
 ## The Unique Kernel
-The puzzle *is* a beam of light. You physically twist mirror pieces with your finger or mouse; the beam re-routes live as each piece snaps, and the moment it finds the gate the seed unfolds and the light carries you onward.
+White light goes in and colour comes out. You drop a glass prism into the beam, turn it, and watch the white split into red, green and blue rays that you then steer with mirrors onto matching targets. Everything re-traces live as you drag.
 
 ## Who It's For
-Someone who enjoyed PRISM / Monument Valley-style games and wants a few quiet minutes of tactile puzzling on a laptop or phone browser, with no install, no text, and no timers.
+Someone who likes short, tactile physics puzzles (Prism Rules, laser-mirror games) and wants a few minutes of "aha" in a laptop or phone browser, with no install.
 
 ## The Core Loop
-Look at the seed → find where the light is stuck → twist a piece (drag or tap) → watch the beam re-route → repeat until the beam escapes through the gate → the seed opens and the next one assembles.
+Read the board (emitter, walls, coloured targets) → drag a mirror or prism from the inventory onto the board → turn it with the dial → watch the beams re-route live → adjust until every target is lit → level complete → next level.
 
 ## Inspiration & Identity
-- PRISM by Clint Siu (mood: minimal, ambient, tactile, wordless). Identity is our own: beam-and-mirror puzzles on a stone seed, not PRISM's shapes or levels.
-- Soft pastel backgrounds, matte stone pieces, one bright warm beam that glows. Each piece clicks with a musical note.
+- The vibe comes from **Prism Rules** (Fun With Computer Vision): a dark stage, glowing neon walls, thick soft beams, a prism that splits colour, and coloured targets. Its levels, art and UI are not copied.
+- Our own identity: a top-down 2D board with glossy, lit 3D-looking pieces (chrome mirrors, a glass prism, a brass emitter, glowing crystal targets), on a deep night background with warm neon brick walls.
+- Original inspiration (v1): PRISM by Clint Siu, for the calm, tactile feel.
 
 ## Why This Matters to the Learner
-They want to build a game in this genre. This proof of concept (PoC) tests the feel before the bigger roadmap.
+They want to build a light-bending game in this style. This proof of concept tests the feel of free-angle optics and placement.
 
 ## What "Working" Looks Like
-In a browser you can play 3 short levels end to end. You twist the pieces, the beam visibly re-routes, and solving a level makes the seed open up before the next level assembles. The "oh, that's cool" beat: the last snap makes the beam shoot out through the gate and the walls fold open.
+In the browser you can play 3 levels end to end. You drag pieces from the inventory, move and rotate them freely, the beams re-trace live, and lighting every target completes the level. The "oh, that's cool" beat: rotating the prism and watching the spectrum fan across the board onto three coloured targets.
 
 ## The POC Boundary
-- One board type: a small square grid with walls, a light core, a gate, and rotatable mirror pieces.
-- Interactions: drag to twist a piece with snapping, or tap to turn it 90°.
-- Linked pieces: twisting one also turns another (level 3).
-- 3 handcrafted levels, solve animation, transition, progress saved in the browser.
-- Simple synthesized sound and glow.
+- Free-angle 2D ray tracing with walls, mirrors (two-sided) and a dispersive prism (real refraction, 3 colour bands).
+- White and coloured targets. A colour target needs a pure ray of its colour.
+- An inventory tray with drag-to-place, drag-to-move, a rotation dial with a degree readout, and drag-back-to-tray to remove.
+- 3 handcrafted levels, restart, level-complete transition, progress saved.
+- Sound and glow carried over from v1.
 
 ## Later
-Level editor, more mechanics (sliders, hinges, splitters, camera orbit), chapters with palettes, layered adaptive music, PWA / iOS wrapper, accessibility options.
+Level editor, more optics (splitters, filters, lenses, portals), a level list screen, more levels, music tracks, PWA / iOS wrapper.
 
 ## Explicitly Cut
-- Free camera orbit: conflicts with drag-to-twist; it needs its own design pass.
-- Level editor: valuable, but not needed to prove the kernel.
-- Text tutorials: against the wordless pillar; level 1 teaches by design.
-- Accounts, leaderboards, monetisation: irrelevant to the feel.
+- Level list screen: 3 levels don't need it. Restart and progress are enough.
+- Pre-placed fixed pieces: not needed to prove the kernel.
+- The v1 grid / 90° mechanic: replaced by free-angle optics (the learner chose option 2).

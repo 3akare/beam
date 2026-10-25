@@ -39,6 +39,26 @@ Build mode: fast
   Learner check: Play with sound on and say whether it feels calm.
   Commit: `Add ambient sound and beam glow`
 
+- [x] **4. You can place a mirror from the tray and bend the beam to light a target**
+  Becomes usable: The dark neon board, emitter, walls and a white target. Drag a mirror from the tray, move it, rotate it on the dial, and watch the beam re-trace live. Lighting the target completes level 1.
+  Why now: This is the new kernel's foundation (free-angle tracing, placement, dial) and replaces the v1 grid.
+  PRD ref: `prd.md > The Core Journey` (steps 1–4, 6), `prd.md > Placing and moving`, `prd.md > Rotating`
+  Spec ref: `spec.md > Optics tracer (src/game/optics.ts)`, `spec.md > Input (src/input.ts)`, `spec.md > Look and Feel`
+  Build: Replace the grid tracer, board, input and UI with the v2 versions. Level 1 with a stored solution. Update the verify script.
+  Verify (mechanical): `npm run verify` passes. Build passes. In the browser, scripted placement of the solution lights the target and completes the level, with no console errors.
+  Learner check: Drag a mirror out, turn it, and light the target. Say whether moving and rotating feel good.
+  Commit: `Rebuild as free-angle optics with inventory placement`
+
+- [x] **5. A prism splits white light onto coloured targets across 3 levels**
+  Becomes usable: Prism dispersion, colour targets, levels 2–3, the completion transition, restart, progress and the end card.
+  Why now: This is the "white in, colour out" kernel moment, plus the full loop.
+  PRD ref: `prd.md > Optics`, `prd.md > Completion and progress`, `prd.md > The Core Journey` (steps 5, 7, 8)
+  Spec ref: `spec.md > Optics tracer (src/game/optics.ts)`, `spec.md > Board renderer (src/render/board.ts)`
+  Build: Prism refraction with dispersion and TIR, colour targets, levels 2–3 with stored solutions, transitions and sounds.
+  Verify (mechanical): `npm run verify` shows all 3 levels unsolved when empty and solved by their stored solutions. A scripted browser play-through reaches the end card.
+  Learner check: Play to the end card and say whether the prism moment lands.
+  Commit: `Add dispersive prism, colour targets and three levels`
+
 ## Hands-on Checkpoints
 
 - [ ] Early usable behavior explored — combined with final review (learner asked for minimal ceremony)
@@ -63,3 +83,6 @@ Activity mode:
 ## Revisions
 
 - Solve and assemble animations, progress saving and the end card were built alongside slice 1 instead of in slice 2 — they shared the board and loop code, so slice 2 became level content plus verification.
+- v2 rebuild (slices 4–5): the learner chose a 2D view with 3D-looking assets, the Prism Rules vibe, free-angle optics and inventory placement. This replaces the v1 grid mechanic from slices 1–3. Sound, bloom, progress and the build setup carry over.
+- Slices 4 and 5 landed in one commit: the optics engine (mirrors and prism) and all three levels were built and verified together, because level design needed the full tracer.
+- Level 3's mirror has a narrow angle window (about 2°). Arrow keys turn in 0.5° steps and the wheel in 1° steps so it stays playable. Targets were kept at radius 0.32 because larger ones block the neighbouring colours.

@@ -2,114 +2,93 @@
 doc: spec
 status: approved
 ---
-<!-- Approved by delegation: stack chosen by the learner (Web + Three.js); everything else is agent defaults (2026-10-23). -->
+<!-- v2 (2026-10-25): same stack; optics engine, pieces, input and UI rebuilt for the learner's option 2. -->
 
 # beam — Technical Spec
 
 ## How This Works, In Plain Language
-- **Levels** are plain data: grid size, where the core and gate are, the walls, and the mirror pieces (position, starting orientation, what else they turn).
-- **The beam tracer** is a small pure function. It walks from the core cell by cell, bouncing off mirrors, and returns the path plus whether it escaped through the gate. It knows nothing about 3D.
-- **The board renderer** turns a level into Three.js meshes (stones, walls, core, mirrors, beam) and plays the solve and assemble animations.
-- **Input** turns pointer drags and taps into piece rotations and handles snapping.
-- **Audio** synthesizes notes with the Web Audio API.
-- **The game loop** (main.ts) wires these together: input changes the orientations → the tracer re-runs → the renderer redraws the beam → solved? → transition.
-
-Keeping the puzzle logic separate from the 3D code lets us check every level automatically with a script, with no browser needed.
+- **Levels** are data: board size, emitter, walls (rectangles), targets (position and colour), the inventory, and one known solution used for checking.
+- **The optics tracer** is a pure function. It shoots rays from the emitter, finds the nearest thing each ray hits (wall, mirror, prism edge, target), then reflects, refracts, splits or stops the ray. It returns beam segments and which targets are lit. It knows nothing about 3D.
+- **The board renderer** draws the level from above with Three.js: lit 3D meshes for the pieces, additive soft quads for the beams, and bloom for the glow.
+- **Input** handles dragging from the tray, moving, selecting and rotating with the dial.
+- **UI** is the DOM overlay: title, restart, sound, inventory tray and end card.
+- **main.ts** holds the state (placed pieces), re-traces on every change and checks for completion.
 
 ## The Core Journey Through the System
-Page load → `main.ts` reads the saved level → `board.build(level)` creates meshes and plays the assemble animation → the player drags a piece → `input.ts` raycasts, rotates the piece and its linked pieces live, and tells the board to truncate the beam → release → spring to the snapped orientation → `trace(level, orientations)` → `board.setBeam(path)` and `audio.note()` → if `escaped`, `board.playSolve()` → `progress.save(next)` → `board.build(nextLevel)`.
+Pointer drags a tray item → `input.ts` creates a provisional piece at the pointer's board position → `main.ts` updates the state → `trace(level, pieces)` → `board.setBeams(segments)` and `board.setTargets(lit)` → release: valid → placed, invalid → returned → all targets lit for 0.6 s → `board.playComplete()` → next level.
 PRD ref: `prd.md > The Core Journey`.
 
 ## Stack
-- TypeScript + Vite (dev server and build). https://vite.dev
-- three.js, including `EffectComposer` + `UnrealBloomPass` from `three/examples/jsm` for the glow. https://threejs.org/docs
-- Web Audio API (built into the browser). https://developer.mozilla.org/docs/Web/API/Web_Audio_API
-- `tsx` (dev only) to run the level-verification script in Node.
+Unchanged: TypeScript, Vite, three.js (bloom via `three/examples/jsm`), Web Audio, and `tsx` for the verification script.
 
 ## Where It Runs and How Someone Tries It
-Runs in any modern browser, including mobile. Requires Node 18+.
 ```
 npm install
 npm run dev        # open the printed localhost URL
-npm run verify     # typecheck + check every level is solvable and starts unsolved
-npm run build      # production bundle in dist/
+npm run verify     # typecheck + each level: empty board unsolved, stored solution solves, solution placements valid
+npm run build
 ```
-Demo recording: `npm run dev`, open the URL, play levels 1→3 (`?level=1` resets the starting point).
+Demo: `npm run dev`, then play levels 1→3 (`?level=1`).
 
 ## Look and Feel
-- Background: vertical pastel gradient per level (dawn peach → sea mint → dusk lilac), with matching fog.
-- Stone: off-white `#efe9e1` matte (MeshStandardMaterial, roughness 0.9). Walls a shade darker. Soft PCF shadows from one warm directional light plus a hemisphere fill.
-- Mirrors: pale silver slab (metalness 0.6, roughness 0.25) on a puck. Followers get a thin ring. Each link group has its own soft accent colour, drawn as a groove line on the board.
-- Beam: warm white-gold, HDR colour so only it passes the bloom threshold.
-- UI: system sans-serif, lowercase, light weight, low-contrast. Motion uses springs and ease-out curves.
+- Background #07080d with a radial vignette. Bloom threshold is low (dark scene), with strength around 1.1.
+- Walls: box meshes with a procedurally drawn brick CanvasTexture used as the emissive map, tinted per level (warm red, magenta, amber).
+- Beams: planes with a soft cross-section gradient texture, additive blending, HDR colours (white `(3,2.9,2.6)`, red, green, blue).
+- Mirror: chrome bar (MeshPhysicalMaterial, metalness 1, roughness 0.05) with graphite end caps.
+- Prism: an extruded equilateral triangle with a bevel. Glass-like (low-opacity physical material, clearcoat) with emissive edge lines.
+- Emitter: brass housing and a glowing lens. Targets: a torus ring plus a crystal orb in the target colour, dim → bright when lit.
+- UI: lowercase monospace, low contrast. Glassy buttons and tray.
 
 ## Components
 
 ### Level data (`src/game/levels.ts`, `src/game/types.ts`)
-`Level { size, core:{x,y,dir}, gate:{x,y}, walls:[x,y][], pieces: Piece[], palette }`. `Piece { id, x, y, o (0–3), follower?, turns?: id[] }`. The gate is a cell just outside the grid.
+`Level { name, width, height, emitter:{x,y,angle}, walls: Rect[], targets: {x,y,color}[], inventory: {mirror, prism}, solution: Placed[], tint }`. Coordinates are in board units, with y growing downward.
 PRD ref: `prd.md > Features and Behavior`.
 
-### Beam tracer (`src/game/beam.ts`)
-`trace(level, orientations, blocked?) → { points: cell[], end: 'gate'|'wall'|'rim'|'blocked', escaped }`. Mirror type = `o % 2` (0 `/`, 1 `\`). Loop guard: stop after `size² × 4` steps. `turnSet(level, id)` returns the ids that rotate when `id` is touched.
-PRD ref: `prd.md > The beam`.
+### Optics tracer (`src/game/optics.ts`)
+`trace(level, placed) → { segments: {a,b,color}[], lit: boolean[] }`. Rays are `{origin, dir, color, inside?}`. Mirrors are segments (length 1.2). Prisms are triangles (side 1.1) with refractive indices `{red 1.42, green 1.52, blue 1.64}`. White hitting a prism splits into three. The board edge is a wall. Ray budget: 40 bounces and 64 rays. Also `overlaps(level, placed, piece)` for placement validity, and `solved(level, placed)`.
+PRD ref: `prd.md > Optics`.
 
 ### Board renderer (`src/render/board.ts`)
-Builds meshes for a level and exposes `pieceMeshes`, `setPieceAngle(id, rad)`, `setBeam(points, escaped)`, `playAssemble()`, `playSolve()`, and `dispose()`. It runs its own tweens from the render loop.
-PRD ref: `prd.md > Look and Feel`, `prd.md > Solving and progress`.
+Static meshes (walls, emitter, targets), dynamic piece meshes keyed by id, a beam layer rebuilt per trace, a selection dial, and the complete/assemble animations.
+PRD ref: `prd.md > Look and Feel`, `prd.md > Completion and progress`.
 
 ### Scene (`src/render/scene.ts`)
-Renderer, camera (fixed 3/4 view, fit to aspect), lights, composer with bloom, background gradient, resize handling.
+Orthographic top-down camera fit to the board plus tray margin, lights, environment, bloom and background.
 
 ### Input (`src/input.ts`)
-Pointer events → raycast pieces → drag: angle += dx × k, applied to the turn set → release: target = round(angle / 90°). Tap (< 6px, < 250ms): target += 90°. Springs live in `main.ts`.
-PRD ref: `prd.md > Twisting pieces`.
+Pointer → board coordinates (ray-plane). Modes: placing from the tray, moving, rotating on the dial. Wheel and arrow keys rotate the selection.
+PRD ref: `prd.md > Placing and moving`, `prd.md > Rotating`.
 
-### Audio (`src/audio.ts`)
-Lazily creates an AudioContext on first gesture. Ambient pad (detuned triangle oscillators → lowpass). `note(i)` plays a pentatonic pluck, `solve()` an arpeggio, `setMuted()`.
-
-### UI (`src/ui.ts`)
-DOM overlay: wordmark, level dots, mute button, end card.
+### UI (`src/ui.ts`) and Audio (`src/audio.ts`)
+Tray with counts (pointerdown starts a placement), title, restart, sound, end card. Audio adds `tick()` and `chime(color)`.
 
 ## Data Model
-Runtime state: `levelIndex`, `orientations: Record<id, number>` (logical, 0–3), `angles: Record<id, {value, target, vel}>` for springs, and `phase: 'assembling'|'playing'|'solving'|'done'`. Persisted: `localStorage['beam.level']` (wrapped in try/catch).
+Runtime: `placed: { id, kind: 'mirror'|'prism', x, y, angle }[]`, `selected`, `phase`. Persisted: `beam.level`, `beam.muted`.
 
 ## File Structure
 ```
-beam/
-├── index.html
-├── package.json
-├── tsconfig.json
-├── src/
-│   ├── main.ts            # game loop and state machine
-│   ├── style.css
-│   ├── audio.ts
-│   ├── input.ts
-│   ├── ui.ts
-│   ├── game/
-│   │   ├── types.ts
-│   │   ├── levels.ts
-│   │   └── beam.ts        # pure beam tracer
-│   └── render/
-│       ├── scene.ts
-│       └── board.ts
-├── scripts/
-│   └── verify-levels.ts   # brute-force: each level solvable, starts unsolved
-└── devpost/               # planning docs
+src/
+├── main.ts            # state, re-trace, completion
+├── audio.ts  input.ts  ui.ts  style.css
+├── game/  types.ts  levels.ts  optics.ts
+└── render/ scene.ts  board.ts  tween.ts  textures.ts
+scripts/verify-levels.ts
 ```
 
 ## External Services and Dependencies
-None at runtime. No APIs, keys or backend.
+None.
 
 ## Important Failure Modes
-- **Audio blocked before a user gesture** → the game stays silent until the first tap, then starts.
-- **localStorage unavailable (private mode)** → caught, and play starts at level 1.
-- **Bloom too heavy on weak devices** → pixel ratio capped at 2. Bloom runs at half resolution.
+- **Rays bouncing forever between parallel mirrors** → the bounce and ray budget cuts them off.
+- **A floating-point ray re-hitting the surface it just left** → a small epsilon offset and ignoring the surface it came from.
+- **Free angles too fiddly on touch** → generous target radius (0.32), dial dragging uses the absolute pointer angle, and arrow keys and the wheel allow fine-tuning.
 
 ## What Was Simplified and Why
-- **2D grid logic under a 3D render** instead of true 3D beam paths — far easier to author and verify. Full 3D would need a 3D tracer and a level editor.
-- **Synthesized sound** instead of composed music — no assets. Real music is a later pass.
-- **Fixed camera** instead of orbit — keeps drag unambiguous.
+- **Three colour bands** instead of a continuous spectrum: readable and cheap. A continuous spectrum would need many rays and blending.
+- **Stored solutions** for verification instead of a solver: free placement is a continuous search space.
 
 ## Decisions and Open Issues
-- Learner chose: web, Three.js, an inspired-by identity. Agent chose everything else (see PRD Product Decisions).
-- Uncertainty: whether dragging to rotate feels good on touch. Investigated in slice 1 by trying it, with tap as a fallback.
+- Learner chose: web/Three.js, 2D with 3D-looking assets, the Prism Rules vibe, look and mechanics, placement from inventory.
+- Agent chose: three bands, dispersion values, dial interaction, level designs.
+- Open: whether free rotation feels good on touch. Check at the learner review.

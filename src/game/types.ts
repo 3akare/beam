@@ -1,38 +1,44 @@
-/** Directions: 0 north (-y), 1 east (+x), 2 south (+y), 3 west (-x). */
-export type Dir = 0 | 1 | 2 | 3;
+export type Band = 'red' | 'green' | 'blue';
+export type LightColor = 'white' | Band;
+export type PieceKind = 'mirror' | 'prism';
 
-export interface Cell {
+export interface Vec {
   x: number;
   y: number;
 }
 
-export interface Piece {
+/** Axis-aligned wall; x/y is the top-left corner. Board units, y grows downward. */
+export interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface Target extends Vec {
+  color: LightColor;
+}
+
+export interface Placement extends Vec {
+  kind: PieceKind;
+  /** Radians, y-down: 0 points right, positive turns clockwise on screen. */
+  angle: number;
+}
+
+export interface Placed extends Placement {
   id: string;
-  x: number;
-  y: number;
-  /** Starting orientation in quarter turns. Even = "/" mirror, odd = "\" mirror. */
-  o: number;
-  /** Followers can't be touched; they only turn through another piece's `turns`. */
-  follower?: boolean;
-  /** Other pieces that turn along with this one. */
-  turns?: string[];
-}
-
-export interface Palette {
-  top: string;
-  bottom: string;
-  accent: string;
 }
 
 export interface Level {
-  size: number;
-  core: Cell & { dir: Dir };
-  /** A cell just outside the grid; the beam must leave through it. */
-  gate: Cell;
-  walls: [number, number][];
-  pieces: Piece[];
-  palette: Palette;
+  name: string;
+  width: number;
+  height: number;
+  emitter: Vec & { angle: number };
+  walls: Rect[];
+  targets: Target[];
+  inventory: Record<PieceKind, number>;
+  /** One known solution, used by `npm run verify`. */
+  solution: Placement[];
+  /** Neon colour of the walls. */
+  tint: string;
 }
-
-/** Orientation per piece id, in quarter turns. */
-export type Orientations = Record<string, number>;
