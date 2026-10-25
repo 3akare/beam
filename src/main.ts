@@ -126,6 +126,7 @@ async function complete() {
   if (finished !== board) return;
   ui.setFade(true);
   await new Promise((r) => setTimeout(r, 750));
+  if (finished !== board) return; // another level was loaded meanwhile
   if (finishedAll) {
     phase = 'done';
     ui.setFade(false);
@@ -299,6 +300,20 @@ if (import.meta.env.DEV) {
       },
       load: (i: number) => loadLevel(i),
       board: () => board,
+      /** Drive the game like a player (for the scripted demo recording). */
+      model,
+      place: (kind: PieceKind, x: number, y: number, angle: number) => {
+        const id = model.takeFromTray(kind, { x, y });
+        if (!id) return null;
+        model.rotate(id, angle);
+        model.drop(id, false);
+        return id;
+      },
+      /** Render now and return the canvas as a PNG/WebM-ready element. */
+      canvas: () => {
+        stage.render();
+        return stage.renderer.domElement;
+      },
       stage,
       sound,
       screen: (p: Vec) => stage.toScreen(board!.toWorld(p)),

@@ -110,6 +110,8 @@ export class Stage {
   private blurTarget: THREE.WebGLRenderTarget;
   private blurQuad = new FullScreenQuad(blurMaterial());
   private board = { w: 12, h: 8 };
+  /** Capture framing: centre the board with even margins (no room kept for the UI). */
+  private captureFraming = false;
   private raycaster = new THREE.Raycaster();
   private floor = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private clock = new THREE.Clock();
@@ -204,11 +206,13 @@ export class Stage {
 
     // World units per CSS pixel, so the board (plus its wall rim) fits the free area.
     const margin = 1.3;
-    const s = Math.max((this.board.w + margin) / (w - SIDE_PX * 2), (this.board.h + margin) / (h - TOP_PX - BOTTOM_PX));
+    const top = this.captureFraming ? 24 : TOP_PX;
+    const bottom = this.captureFraming ? 24 : BOTTOM_PX;
+    const s = Math.max((this.board.w + margin) / (w - SIDE_PX * 2), (this.board.h + margin) / (h - top - bottom));
     const halfW = (w * s) / 2;
     const halfH = (h * s) / 2;
     // Centre the board in the space between title bar and tray.
-    const shift = ((BOTTOM_PX - TOP_PX) / 2) * s;
+    const shift = ((bottom - top) / 2) * s;
     this.camera.left = -halfW;
     this.camera.right = halfW;
     this.camera.top = halfH - shift;
@@ -231,6 +235,13 @@ export class Stage {
     return { x: r.left + ((v.x + 1) / 2) * r.width, y: r.top + ((1 - v.y) / 2) * r.height };
   }
 
+  /** Capture mode: even framing, fixed pixel ratio, no adaptive quality. */
+  setCaptureFraming(on: boolean, pixelRatio = 1.5) {
+    this.captureFraming = on;
+    if (on) this.renderer.setPixelRatio(pixelRatio);
+    this.resize();
+  }
+
   /** Re-render shadows on the next frame (call when anything moved). */
   refreshShadows() {
     this.renderer.shadowMap.needsUpdate = true;
@@ -241,6 +252,7 @@ export class Stage {
 
   /** If frames run slow, render at a lower pixel ratio. Never goes back up mid-session. */
   private adapt() {
+    if (this.captureFraming) return;
     const now = performance.now();
     if (this.lastFrame) this.frameTimes.push(now - this.lastFrame);
     this.lastFrame = now;
