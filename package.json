@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "verify": "tsc --noEmit && tsx scripts/verify-levels.ts",
-    "generate": "tsx scripts/generate.ts"
+    "generate": "tsx scripts/generate.ts",
+    "campaign": "tsx scripts/build-campaign.ts"
   },
   "dependencies": {
     "three": "^0.186.1"

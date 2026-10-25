@@ -57,8 +57,8 @@ export const LEVELS: Level[] = [
     ],
     inventory: { mirror: 1, prism: 1 },
     solution: [
-      { kind: 'mirror', x: 3.78, y: 1.24, angle: 1.0496 },
-      { kind: 'prism', x: 3.46, y: 2.78, angle: 4.8835 },
+      { kind: 'mirror', x: 3.78, y: 1.24, angle: deg(60) },
+      { kind: 'prism', x: 3.46, y: 2.78, angle: deg(280) },
     ],
     tint: '#ffa23d',
   },

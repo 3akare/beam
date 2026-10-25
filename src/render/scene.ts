@@ -75,6 +75,27 @@ const FinishShader = {
     }`,
 };
 
+/**
+ * The studio HDRI has lamps ~1000× brighter than its walls and a strong cyan cast. Clamp the
+ * lamps and pull colour halfway to neutral so chrome reads as chrome, not as a coloured glare.
+ */
+function tameHdr(tex: THREE.DataTexture) {
+  const d = tex.image.data as Uint16Array | Float32Array;
+  const half = d instanceof Uint16Array;
+  const get = (i: number) => (half ? THREE.DataUtils.fromHalfFloat(d[i]) : d[i]);
+  const set = (i: number, v: number) => (d[i] = half ? THREE.DataUtils.toHalfFloat(v) : v);
+  for (let i = 0; i < d.length; i += 4) {
+    const r = Math.min(get(i), 6);
+    const g = Math.min(get(i + 1), 6);
+    const b = Math.min(get(i + 2), 6);
+    const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    set(i, l + (r - l) * 0.45);
+    set(i + 1, l + (g - l) * 0.45);
+    set(i + 2, l + (b - l) * 0.45);
+  }
+  tex.needsUpdate = true;
+}
+
 /** Renderer, a straight-down orthographic camera, lights, the beam light buffer and post-processing. */
 export class Stage {
   readonly renderer: THREE.WebGLRenderer;
@@ -95,9 +116,13 @@ export class Stage {
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    // The prism's glass refraction pass doesn't need full resolution.
+    this.renderer.transmissionResolutionScale = 0.5;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // The stage is static between moves: shadows are re-rendered only when something changes.
+    this.renderer.shadowMap.autoUpdate = false;
     // AgX takes bright saturated light gracefully to white instead of skewing its hue.
     this.renderer.toneMapping = THREE.AgXToneMapping;
     this.renderer.toneMappingExposure = 1.15;
@@ -106,12 +131,17 @@ export class Stage {
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     this.scene.environmentIntensity = 0.45;
-    new HDRLoader().load(HDRI.neon, (hdr) => {
-      hdr.mapping = THREE.EquirectangularReflectionMapping;
-      this.scene.environment = pmrem.fromEquirectangular(hdr).texture;
-      this.scene.environmentIntensity = 0.85;
-      hdr.dispose();
-    });
+    // Loaded after the first frames so it never delays the moment you can play.
+    const loadHdri = () =>
+      new HDRLoader().load(HDRI.neon, (hdr) => {
+        hdr.mapping = THREE.EquirectangularReflectionMapping;
+        tameHdr(hdr);
+        this.scene.environment = pmrem.fromEquirectangular(hdr).texture;
+        this.scene.environmentIntensity = 0.85;
+        hdr.dispose();
+      });
+    if ('requestIdleCallback' in window) requestIdleCallback(loadHdri, { timeout: 1500 });
+    else setTimeout(loadHdri, 500);
 
     // Looking straight down, with north (board y = 0) at the top of the screen.
     this.camera.position.set(0, 30, 0);
@@ -167,8 +197,9 @@ export class Stage {
     this.composer.setPixelRatio(dpr);
     this.composer.setSize(w, h);
     this.bloom.resolution.set(w / 2, h / 2);
-    this.lightTarget.setSize(Math.ceil((w * dpr) / 2), Math.ceil((h * dpr) / 2));
-    this.blurTarget.setSize(Math.ceil((w * dpr) / 2), Math.ceil((h * dpr) / 2));
+    // The beam light is soft and blurred: a quarter-resolution buffer is plenty.
+    this.lightTarget.setSize(Math.ceil((w * dpr) / 4), Math.ceil((h * dpr) / 4));
+    this.blurTarget.setSize(Math.ceil((w * dpr) / 4), Math.ceil((h * dpr) / 4));
     beamLight.uLightRes.value.set(w * dpr, h * dpr);
 
     // World units per CSS pixel, so the board (plus its wall rim) fits the free area.
@@ -200,7 +231,32 @@ export class Stage {
     return { x: r.left + ((v.x + 1) / 2) * r.width, y: r.top + ((1 - v.y) / 2) * r.height };
   }
 
+  /** Re-render shadows on the next frame (call when anything moved). */
+  refreshShadows() {
+    this.renderer.shadowMap.needsUpdate = true;
+  }
+
+  private frameTimes: number[] = [];
+  private lastFrame = 0;
+
+  /** If frames run slow, render at a lower pixel ratio. Never goes back up mid-session. */
+  private adapt() {
+    const now = performance.now();
+    if (this.lastFrame) this.frameTimes.push(now - this.lastFrame);
+    this.lastFrame = now;
+    if (this.frameTimes.length < 90) return;
+    const sorted = [...this.frameTimes].sort((a, b) => a - b);
+    const median = sorted[sorted.length >> 1];
+    this.frameTimes = [];
+    const dpr = this.renderer.getPixelRatio();
+    if (median > 21 && dpr > 0.75) {
+      this.renderer.setPixelRatio(Math.max(0.75, dpr - 0.25));
+      this.resize();
+    }
+  }
+
   render() {
+    this.adapt();
     beamLight.uTime.value = this.clock.getElapsedTime();
     // 1. Beam light into the half-res HDR buffer (black background, additive).
     this.renderer.setRenderTarget(this.lightTarget);
@@ -210,7 +266,7 @@ export class Stage {
     // Soften it: two blur rounds, each horizontal then vertical.
     const mat = this.blurQuad.material as THREE.ShaderMaterial;
     const { width, height } = this.lightTarget;
-    for (const spread of [1.5, 3]) {
+    for (const spread of [1, 2]) {
       mat.uniforms.tSrc.value = this.lightTarget.texture;
       mat.uniforms.uStep.value.set(spread / width, 0);
       this.renderer.setRenderTarget(this.blurTarget);

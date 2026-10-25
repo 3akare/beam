@@ -85,6 +85,9 @@ function segmentRectDistance(a: Vec, b: Vec, r: Rect) {
   return best;
 }
 
+const DETENT = (5 * Math.PI) / 180;
+const onGrid = (a: number) => Math.round(a / DETENT) * DETENT;
+
 /** Mirror angle that turns direction `din` into `dout`. */
 function mirrorFor(din: Vec, dout: Vec) {
   const nx = dout.x - din.x;
@@ -117,8 +120,12 @@ function placeMirrorOn(draft: Draft, seg: BeamSegment, rng: Rng, minDist = 1.4):
     const p = add(seg.a, d, dist);
     if (!inside(draft.level, p, 1.1)) continue;
     const turn = (rng.chance(0.5) ? 1 : -1) * rng.range((40 * Math.PI) / 180, (140 * Math.PI) / 180);
-    const dout = unit(Math.atan2(d.y, d.x) + turn);
-    const m: Placement = { kind: 'mirror', x: p.x, y: p.y, angle: mirrorFor(d, dout) };
+    // Snap the mirror to the 5° grid players turn on, then see where light actually goes.
+    const angle = onGrid(mirrorFor(d, unit(Math.atan2(d.y, d.x) + turn)));
+    const n = { x: -Math.sin(angle), y: Math.cos(angle) };
+    const k = 2 * (d.x * n.x + d.y * n.y);
+    const dout = { x: d.x - k * n.x, y: d.y - k * n.y };
+    const m: Placement = { kind: 'mirror', x: p.x, y: p.y, angle };
     if (!canPlace(draft.level, draft.pieces, m)) continue;
     // The new direction needs some room before it hits the board edge.
     const ahead = add(p, dout, 2.2);
@@ -149,7 +156,7 @@ function buildSolution(recipe: Recipe, base: Level, rng: Rng): Draft | null {
     const dist = rng.range(1.3, Math.min(len(seg) - 1.2, 5));
     if (dist < 1.3) break;
     const p = add(seg.a, d, dist);
-    const prism: Placement = { kind: 'prism', x: p.x, y: p.y, angle: rng.range(0, Math.PI * 2) };
+    const prism: Placement = { kind: 'prism', x: p.x, y: p.y, angle: rng.int(0, 71) * DETENT };
     if (!inside(draft.level, p, 1.3) || !canPlace(draft.level, draft.pieces, prism)) continue;
     const fin = finalSegments(trace(draft.level, [...draft.pieces, prism]).segments);
     const bands = BANDS.map((b) => fin.get(b));

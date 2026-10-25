@@ -207,6 +207,25 @@ export function trace(level: Level, placed: Placement[]): TraceResult {
   return { segments, lit };
 }
 
+/**
+ * How close each target is to being lit: 1 when lit, otherwise a gentle 0–0.35 as a beam of
+ * its colour passes within 1.5 units. Shown as a faint glow, a "warmer/colder" hint.
+ */
+export function targetWarmth(level: Level, r: TraceResult): number[] {
+  return level.targets.map((t, i) => {
+    if (r.lit[i]) return 1;
+    let best = Infinity;
+    for (const s of r.segments) {
+      if (s.inside || s.color !== t.color) continue;
+      const ex = s.b.x - s.a.x;
+      const ey = s.b.y - s.a.y;
+      const k = Math.max(0, Math.min(1, ((t.x - s.a.x) * ex + (t.y - s.a.y) * ey) / (ex * ex + ey * ey || 1e-9)));
+      best = Math.min(best, Math.hypot(t.x - (s.a.x + ex * k), t.y - (s.a.y + ey * k)));
+    }
+    return best === Infinity ? 0 : 0.35 * Math.max(0, 1 - (best - TARGET_RADIUS) / 1.5);
+  });
+}
+
 export function solved(level: Level, placed: Placement[]): boolean {
   return level.targets.length > 0 && trace(level, placed).lit.every(Boolean);
 }

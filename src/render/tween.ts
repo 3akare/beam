@@ -23,6 +23,11 @@ export class Tweens {
     });
   }
 
+  /** True while any tween is running. */
+  get active() {
+    return this.list.length > 0;
+  }
+
   update(dt: number) {
     this.time += dt;
     this.list = this.list.filter((t) => {

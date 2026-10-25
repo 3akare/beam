@@ -18,11 +18,16 @@ export interface PlayModel {
   /** End of a drag: keep the piece, return it to the tray, or put it back where it was. */
   drop(id: string, overTray: boolean): void;
   returnToTray(id: string): void;
+  /** How the dial should look: pointer over it, or turning with it. */
+  dialState(state: 'idle' | 'hover' | 'active'): void;
 }
 
-const DIAL_INNER = 0.62;
-const DIAL_OUTER = 1.15;
+const DIAL_INNER = 0.6;
+const DIAL_OUTER = 1.2;
 const deg = Math.PI / 180;
+/** Pieces click into 5° steps; hold Shift for fine control. */
+export const DETENT = 5 * deg;
+const snap = (a: number, fine: boolean) => (fine ? a : Math.round(a / DETENT) * DETENT);
 
 type Gesture =
   | { mode: 'move'; id: string; pointer: number; offset: Vec }
@@ -70,6 +75,7 @@ export class PlayInput {
         this.gesture = { mode: 'rotate', id: sel, pointer: e.pointerId, grab };
         this.canvas.setPointerCapture(e.pointerId);
         document.body.classList.add('turning');
+        this.m.dialState('active');
         return;
       }
     }
@@ -97,7 +103,7 @@ export class PlayInput {
       document.body.classList.toggle('over-tray', this.m.overTray(e.clientX, e.clientY));
     } else {
       const c = this.m.piece(g.id)!;
-      this.m.rotate(g.id, Math.atan2(p.y - c.y, p.x - c.x) - g.grab);
+      this.m.rotate(g.id, snap(Math.atan2(p.y - c.y, p.x - c.x) - g.grab, e.shiftKey));
     }
   };
 
@@ -106,6 +112,7 @@ export class PlayInput {
     if (!g || e.pointerId !== g.pointer) return;
     this.gesture = null;
     document.body.classList.remove('dragging', 'turning', 'over-tray');
+    this.m.dialState('idle');
     if (g.mode === 'move') this.m.drop(g.id, this.m.overTray(e.clientX, e.clientY));
   };
 
@@ -117,24 +124,27 @@ export class PlayInput {
     const sel = this.m.selected();
     const c = sel ? this.m.piece(sel) : null;
     const onDial = c && Math.hypot(p.x - c.x, p.y - c.y) > DIAL_INNER && Math.hypot(p.x - c.x, p.y - c.y) < DIAL_OUTER;
-    this.canvas.style.cursor = this.m.pieceAt(p) ? 'grab' : onDial ? 'alias' : '';
+    const overPiece = this.m.pieceAt(p);
+    this.canvas.style.cursor = overPiece ? 'grab' : onDial ? 'grab' : '';
+    this.m.dialState(onDial && !overPiece ? 'hover' : 'idle');
   }
 
   private wheel = (e: WheelEvent) => {
     const sel = this.m.selected();
     if (!sel || !this.m.enabled()) return;
     e.preventDefault();
-    const step = (e.shiftKey ? 5 : 1) * deg * Math.sign(e.deltaY || e.deltaX);
-    this.m.rotate(sel, this.m.piece(sel)!.angle + step);
+    const dir = Math.sign(e.deltaY || e.deltaX);
+    const angle = this.m.piece(sel)!.angle;
+    this.m.rotate(sel, e.shiftKey ? angle + dir * deg : snap(angle, false) + dir * DETENT);
   };
 
   private key = (e: KeyboardEvent) => {
     const sel = this.m.selected();
     if (!sel || !this.m.enabled() || this.gesture) return;
     const piece = this.m.piece(sel)!;
-    const step = (e.shiftKey ? 5 : 0.5) * deg;
-    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') this.m.rotate(sel, piece.angle + step);
-    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') this.m.rotate(sel, piece.angle - step);
+    const turn = (dir: number) => (e.shiftKey ? piece.angle + dir * 0.5 * deg : snap(piece.angle, false) + dir * DETENT);
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') this.m.rotate(sel, turn(1));
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') this.m.rotate(sel, turn(-1));
     else if (e.key === 'Delete' || e.key === 'Backspace') this.m.returnToTray(sel);
     else if (e.key === 'Escape') this.m.select(null);
     else return;

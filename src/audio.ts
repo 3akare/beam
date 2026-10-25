@@ -25,13 +25,22 @@ export class Sound {
   /** Browsers only allow audio after a user gesture, so this runs on the first tap. */
   start() {
     if (this.ctx) {
-      if (this.ctx.state === 'suspended') this.ctx.resume();
+      if (this.ctx.state !== 'running') void this.ctx.resume();
       return;
     }
+    // iOS: play through the silent switch like any media, rather than as a muted "ambient" sound.
+    const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+    if (session) session.type = 'playback';
     const ctx = (this.ctx = new AudioContext());
+    if (ctx.state !== 'running') void ctx.resume();
+    // A gentle limiter keeps louder moments clean.
+    const limiter = ctx.createDynamicsCompressor();
+    limiter.threshold.value = -10;
+    limiter.ratio.value = 8;
+    limiter.connect(ctx.destination);
     this.master = ctx.createGain();
     this.master.gain.value = this.muted ? 0 : 1;
-    this.master.connect(ctx.destination);
+    this.master.connect(limiter);
 
     // A warm echo: delay with filtered feedback.
     const delay = ctx.createDelay();
@@ -63,7 +72,7 @@ export class Sound {
     lfo.start();
     const padGain = ctx.createGain();
     padGain.gain.setValueAtTime(0, ctx.currentTime);
-    padGain.gain.linearRampToValueAtTime(0.05, ctx.currentTime + 4);
+    padGain.gain.linearRampToValueAtTime(0.09, ctx.currentTime + 3);
     padFilter.connect(padGain).connect(this.master);
     for (const [interval, detune] of [
       [-12, -6],
@@ -79,6 +88,9 @@ export class Sound {
       osc.start();
       this.pad.push({ osc, interval });
     }
+    // A soft hello, so it's obvious sound is on.
+    this.note(2, 0.05, 0.18);
+    this.note(4, 0.17, 0.12);
   }
 
   setLevel(index: number) {
@@ -89,7 +101,7 @@ export class Sound {
   }
 
   /** A soft pluck; `step` walks up the level's pentatonic scale. */
-  note(step: number, when = 0, volume = 0.16) {
+  note(step: number, when = 0, volume = 0.26) {
     if (!this.ctx || !this.fx) return;
     const ctx = this.ctx;
     const t = ctx.currentTime + when;
@@ -116,12 +128,12 @@ export class Sound {
   }
 
   solve() {
-    [0, 1, 2, 3, 4, 5, 7, 9].forEach((step, i) => this.note(step, i * 0.11, 0.12));
+    [0, 1, 2, 3, 4, 5, 7, 9].forEach((step, i) => this.note(step, i * 0.11, 0.2));
   }
 
   /** A piece set down on the board. */
   place() {
-    this.note(0, 0, 0.12);
+    this.note(0, 0, 0.22);
   }
 
   /** A quiet click as a piece turns past each 15° mark. */
@@ -132,7 +144,7 @@ export class Sound {
     const env = this.ctx.createGain();
     osc.type = 'triangle';
     osc.frequency.value = hz(this.root + 36);
-    env.gain.setValueAtTime(0.035, t);
+    env.gain.setValueAtTime(0.06, t);
     env.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
     osc.connect(env).connect(this.fx);
     osc.start(t);
@@ -142,8 +154,8 @@ export class Sound {
   /** A target lighting up; each colour has its own step in the scale. */
   chime(color: 'white' | 'red' | 'green' | 'blue') {
     const step = { white: 7, red: 5, green: 7, blue: 9 }[color];
-    this.note(step, 0, 0.13);
-    this.note(step + 2, 0.08, 0.06);
+    this.note(step, 0, 0.24);
+    this.note(step + 2, 0.08, 0.12);
   }
 
   toggleMuted() {

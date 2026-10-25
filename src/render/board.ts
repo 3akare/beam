@@ -29,7 +29,7 @@ interface TargetView {
   orbMesh: THREE.Mesh;
   halo: THREE.Mesh;
   level: number;
-  lit: boolean;
+  warmth: number;
 }
 
 /** A level drawn from above: neon brick walls, emitter, targets, placed pieces, beams and the dial. */
@@ -48,7 +48,10 @@ export class Board {
   private fixed: THREE.Group[] = [];
   private beams: BeamRenderer;
   private dial = new THREE.Group();
-  private dialKnob: THREE.Mesh;
+  private dialKnob: THREE.Group;
+  private dialPointer: THREE.Mesh;
+  private dialMat: THREE.MeshBasicMaterial;
+  private knobMat: THREE.MeshBasicMaterial;
   private wallGlow = 0.75;
 
   // Shared piece parts.
@@ -187,7 +190,7 @@ export class Board {
       g.add(plinth, ring, orb, halo);
       g.position.copy(this.toWorld(t));
       this.group.add(g);
-      this.targets.push({ group: g, ring: ringMat, orb: orbMat, orbMesh: orb, halo, level: 0, lit: false });
+      this.targets.push({ group: g, ring: ringMat, orb: orbMat, orbMesh: orb, halo, level: 0, warmth: 0 });
     }
 
     // Piece parts, shared by every placed mirror and prism.
@@ -275,25 +278,40 @@ export class Board {
     this.own(dust.material as THREE.Material);
     this.group.add(dust);
 
-    // Rotation dial: a thin ring with 15° ticks and a knob at the piece's angle.
-    const dialMat = this.own(
-      new THREE.MeshBasicMaterial({ color: 0xd9cbb8, transparent: true, opacity: 0.5, depthWrite: false }),
-    );
-    const ring = new THREE.Mesh(this.own(new THREE.RingGeometry(0.86, 0.885, 128)), dialMat);
-    ring.rotation.x = -Math.PI / 2;
-    this.dial.add(ring);
-    const tickGeo = this.own(new THREE.PlaneGeometry(0.1, 0.018));
+    // Rotation dial: an orange ring on a dark backing (readable over any light), 5° and
+    // 15° ticks, a pointer from the centre, and a big knob at the piece's angle.
+    const ORANGE = new THREE.Color(0xff8a1f);
+    const flat = (geo: THREE.BufferGeometry, mat: THREE.Material) => {
+      const m = new THREE.Mesh(geo, mat);
+      m.rotation.x = -Math.PI / 2;
+      return m;
+    };
+    const backing = this.own(new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.55, depthWrite: false }));
+    this.dialMat = this.own(new THREE.MeshBasicMaterial({ color: ORANGE.clone(), transparent: true, depthWrite: false }));
+    this.dial.add(flat(this.own(new THREE.RingGeometry(0.78, 0.96, 128)), backing));
+    this.dial.add(flat(this.own(new THREE.RingGeometry(0.855, 0.9, 128)), this.dialMat));
+    const tickGeo = this.own(new THREE.PlaneGeometry(1, 1));
     tickGeo.rotateX(-Math.PI / 2);
-    for (let a = 0; a < 360; a += 15) {
-      const tick = new THREE.Mesh(tickGeo, dialMat);
-      const r = a % 90 === 0 ? 0.8 : 0.83;
-      tick.scale.x = a % 90 === 0 ? 1.6 : 1;
+    for (let a = 0; a < 360; a += 5) {
+      const major = a % 15 === 0;
+      const tick = new THREE.Mesh(tickGeo, this.dialMat);
+      const len = a % 90 === 0 ? 0.11 : major ? 0.07 : 0.035;
+      const r = 0.84 - len / 2;
+      tick.scale.set(len, 1, major ? 0.022 : 0.012);
       tick.position.set(Math.cos((a * Math.PI) / 180) * r, 0, Math.sin((a * Math.PI) / 180) * r);
       tick.rotation.y = (-a * Math.PI) / 180;
       this.dial.add(tick);
     }
-    this.dialKnob = new THREE.Mesh(this.own(new THREE.SphereGeometry(0.075, 20, 14)), this.own(new THREE.MeshBasicMaterial({ color: new THREE.Color(1.3, 1.1, 0.9) })));
+    this.dialPointer = new THREE.Mesh(tickGeo, this.dialMat);
+    this.dialPointer.scale.set(0.3, 1, 0.022);
+    this.dial.add(this.dialPointer);
+    this.dialKnob = new THREE.Group();
+    this.dialKnob.add(flat(this.own(new THREE.CircleGeometry(0.19, 40)), backing));
+    this.knobMat = this.own(new THREE.MeshBasicMaterial({ color: ORANGE.clone() }));
+    this.dialKnob.add(flat(this.own(new THREE.CircleGeometry(0.14, 40)), this.knobMat));
+    this.dialKnob.add(flat(this.own(new THREE.RingGeometry(0.05, 0.075, 32)), backing));
     this.dial.add(this.dialKnob);
+    this.setDialState('idle');
     this.dial.position.y = 0.02;
     this.dial.visible = false;
     this.group.add(this.dial);
@@ -370,8 +388,9 @@ export class Board {
     this.beams.set(segments, { p: emitterOrigin(this.level), angle: this.level.emitter.angle });
   }
 
-  setLit(lit: boolean[]) {
-    lit.forEach((on, i) => (this.targets[i].lit = on));
+  /** Per target: 1 = lit, smaller = how close a matching beam is. */
+  setLit(warmth: number[]) {
+    warmth.forEach((w, i) => (this.targets[i].warmth = w));
   }
 
   /** Show the dial around a piece, or hide it. */
@@ -379,7 +398,18 @@ export class Board {
     this.dial.visible = !!p;
     if (!p) return;
     this.dial.position.copy(this.toWorld(p, 0.02));
-    this.dialKnob.position.set(Math.cos(p.angle) * 0.87, 0.02, Math.sin(p.angle) * 0.87);
+    this.dialKnob.position.set(Math.cos(p.angle) * 0.88, 0.03, Math.sin(p.angle) * 0.88);
+    this.dialPointer.position.set(Math.cos(p.angle) * 0.58, 0.01, Math.sin(p.angle) * 0.58);
+    this.dialPointer.rotation.y = -p.angle;
+  }
+
+  /** Brighter while hovered, brightest (glowing) while turning. */
+  setDialState(state: 'idle' | 'hover' | 'active') {
+    const k = state === 'active' ? 2.4 : state === 'hover' ? 1.5 : 1;
+    this.dialMat.color.set(0xff8a1f).multiplyScalar(k);
+    this.dialMat.opacity = state === 'idle' ? 0.85 : 1;
+    this.knobMat.color.set(0xffa040).multiplyScalar(k * 1.1);
+    this.dialKnob.scale.setScalar(state === 'idle' ? 1 : 1.2);
   }
 
   playAssemble(): Promise<void> {
@@ -412,12 +442,17 @@ export class Board {
     return Promise.all([flare, fade]).then(() => undefined);
   }
 
+  /** Pieces are moving (assembling, completing, dropping in): shadows need refreshing. */
+  get animating() {
+    return this.tweens.active;
+  }
+
   update(dt: number) {
     this.time += dt;
     this.tweens.update(dt);
     for (const w of this.walls) w.mat.emissiveIntensity = this.wallGlow * (0.94 + Math.sin(this.time * 1.3 + w.mesh.position.x) * 0.06);
     for (const t of this.targets) {
-      t.level += ((t.lit ? 1 : 0) - t.level) * Math.min(1, dt * 8);
+      t.level += (t.warmth - t.level) * Math.min(1, dt * 8);
       const k = t.level;
       t.ring.emissiveIntensity = 0.06 + k * 1.0;
       t.orb.emissiveIntensity = 0.05 + k * 1.3;

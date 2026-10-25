@@ -15,7 +15,6 @@ export class UI {
   private end: HTMLElement;
   private sound: HTMLButtonElement;
   private restart: HTMLButtonElement;
-  private skip: HTMLButtonElement;
 
   constructor(root: HTMLElement) {
     root.innerHTML = `
@@ -23,7 +22,6 @@ export class UI {
         <div class="title"></div>
         <div class="actions">
           <button class="restart" title="Restart level (R)">restart ↺</button>
-          <button class="skip" title="Skip to the next puzzle" hidden>skip ⇥</button>
           <button class="sound" aria-label="Toggle sound" title="Sound (M)"></button>
         </div>
       </header>
@@ -41,7 +39,6 @@ export class UI {
     this.end = root.querySelector('.end')!;
     this.sound = root.querySelector('.sound')!;
     this.restart = root.querySelector('.restart')!;
-    this.skip = root.querySelector('.skip')!;
     for (const kind of ['mirror', 'prism'] as PieceKind[]) {
       const el = document.createElement('button');
       el.className = 'slot';
@@ -52,14 +49,11 @@ export class UI {
     }
   }
 
-  /** `generated` (seed · complexity) marks an endless level, which can also be skipped. */
-  setTitle(index: number, name: string, generated?: string) {
-    this.title.innerHTML = `<span class="num">level ${index + 1}</span> ${name}${generated ? ` <span class="gen">${generated}</span>` : ''}`;
-    this.skip.hidden = !generated;
-  }
-
-  onSkip(cb: () => void) {
-    this.skip.onclick = cb;
+  /** `generated` (seed · complexity) labels a custom generated puzzle. */
+  setTitle(index: number, total: number, name: string, generated?: string) {
+    this.title.innerHTML = generated
+      ? `<span class="num">custom</span> ${name} <span class="gen">${generated}</span>`
+      : `<span class="num">${index + 1}/${total}</span> ${name}`;
   }
 
   setAccent(color: string) {
